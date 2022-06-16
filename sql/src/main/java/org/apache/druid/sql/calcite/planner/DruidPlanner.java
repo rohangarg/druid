@@ -27,6 +27,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.adapter.java.JavaTypeFactory;
@@ -39,9 +40,12 @@ import org.apache.calcite.interpreter.Bindables;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Enumerator;
+import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.plan.volcano.VolcanoPlanner;
 import org.apache.calcite.prepare.CalciteCatalogReader;
+import org.apache.calcite.prepare.PlannerImpl;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
@@ -50,6 +54,7 @@ import org.apache.calcite.rel.logical.LogicalSort;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlExplain;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -63,6 +68,7 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
+import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.Planner;
@@ -78,11 +84,15 @@ import org.apache.druid.java.util.common.guava.Sequences;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.query.Query;
+import org.apache.druid.query.filter.DimFilter;
 import org.apache.druid.segment.DimensionHandlerUtils;
+import org.apache.druid.segment.column.ColumnHolder;
+import org.apache.druid.segment.column.RowSignature;
 import org.apache.druid.server.security.Action;
 import org.apache.druid.server.security.Resource;
 import org.apache.druid.server.security.ResourceAction;
 import org.apache.druid.server.security.ResourceType;
+import org.apache.druid.sql.calcite.expression.Expressions;
 import org.apache.druid.sql.calcite.parser.DruidSqlInsert;
 import org.apache.druid.sql.calcite.parser.DruidSqlParserUtils;
 import org.apache.druid.sql.calcite.parser.DruidSqlReplace;
@@ -210,7 +220,53 @@ public class DruidPlanner implements Closeable
   {
     resetPlanner();
 
-    final ParsedNodes parsed = ParsedNodes.create(planner.parse(plannerContext.getSql()), plannerContext.getTimeZone());
+    SqlNode sqlNode = planner.parse(plannerContext.getSql());
+    final ParsedNodes parsed = ParsedNodes.create(sqlNode, plannerContext.getTimeZone());
+
+    if (sqlNode instanceof DruidSqlReplace) {
+      DruidSqlReplace druidSqlReplace = (DruidSqlReplace) sqlNode;
+      final CalciteConnectionConfig connectionConfig;
+
+      if (frameworkConfig.getContext() != null) {
+        connectionConfig = frameworkConfig.getContext().unwrap(CalciteConnectionConfig.class);
+      } else {
+        Properties properties = new Properties();
+        properties.setProperty(
+            CalciteConnectionProperty.CASE_SENSITIVE.camelName(),
+            String.valueOf(PlannerFactory.PARSER_CONFIG.caseSensitive())
+        );
+        connectionConfig = new CalciteConnectionConfigImpl(properties);
+      }
+
+      Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
+          CalciteSchema.from(frameworkConfig.getDefaultSchema().getParentSchema()),
+          CalciteSchema.from(frameworkConfig.getDefaultSchema()).path(null),
+          planner.getTypeFactory(),
+          connectionConfig
+      );
+      final RexBuilder rexBuilder = new RexBuilder(planner.getTypeFactory());
+      final RelOptCluster cluster = RelOptCluster.create(
+          new VolcanoPlanner(frameworkConfig.getCostFactory(), frameworkConfig.getContext()), rexBuilder
+      );
+      SqlToRelConverter sqlToRelConverter = new SqlToRelConverter(
+          (PlannerImpl) planner,
+          getValidator(),
+          catalogReader,
+          cluster,
+          frameworkConfig.getConvertletTable(),
+          frameworkConfig.getSqlToRelConverterConfig()
+      );
+      RexNode rexNode = sqlToRelConverter.convertExpression(
+          druidSqlReplace.getReplaceTimeQuery(),
+          ImmutableMap.of(
+              ColumnHolder.TIME_COLUMN_NAME,
+              new RexInputRef(0, planner.getTypeFactory().createSqlType(SqlTypeName.TIMESTAMP, 3))
+          )
+      );
+      RowSignature rowSignature = RowSignature.builder().addTimeColumn().build();
+      DimFilter dimFilter = Expressions.toFilter(plannerContext, rowSignature, null, rexNode);
+      System.out.println(dimFilter);
+    }
 
     try {
       if (parsed.getIngestionGranularity() != null) {
