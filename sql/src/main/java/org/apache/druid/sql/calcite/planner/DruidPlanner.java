@@ -27,6 +27,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.adapter.java.JavaTypeFactory;
@@ -39,9 +40,12 @@ import org.apache.calcite.interpreter.Bindables;
 import org.apache.calcite.jdbc.CalciteSchema;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Enumerator;
+import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptPlanner;
 import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.plan.volcano.VolcanoPlanner;
 import org.apache.calcite.prepare.CalciteCatalogReader;
+import org.apache.calcite.prepare.PlannerImpl;
 import org.apache.calcite.prepare.Prepare;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
@@ -50,6 +54,7 @@ import org.apache.calcite.rel.logical.LogicalSort;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexBuilder;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlExplain;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -63,6 +68,7 @@ import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
+import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.FrameworkConfig;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.Planner;
@@ -79,6 +85,7 @@ import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.query.Query;
 import org.apache.druid.segment.DimensionHandlerUtils;
+import org.apache.druid.segment.column.ColumnHolder;
 import org.apache.druid.server.security.Action;
 import org.apache.druid.server.security.Resource;
 import org.apache.druid.server.security.ResourceAction;
@@ -93,7 +100,6 @@ import org.apache.druid.sql.calcite.rel.DruidUnionRel;
 import org.apache.druid.sql.calcite.run.QueryMaker;
 import org.apache.druid.sql.calcite.run.QueryMakerFactory;
 import org.apache.druid.utils.Throwables;
-import org.joda.time.DateTimeZone;
 
 import javax.annotation.Nullable;
 import java.io.Closeable;
@@ -138,8 +144,15 @@ public class DruidPlanner implements Closeable
   public ValidationResult validate(boolean authorizeContextParams) throws SqlParseException, ValidationException
   {
     resetPlanner();
-    final ParsedNodes parsed = ParsedNodes.create(planner.parse(plannerContext.getSql()), plannerContext.getTimeZone());
+    final SqlNode sqlNode = planner.parse(plannerContext.getSql());
     final SqlValidator validator = getValidator();
+    final ParsedNodes parsed = ParsedNodes.create(
+        sqlNode,
+        plannerContext,
+        buildSqlToRelConverter(),
+        planner.getTypeFactory(),
+        validator
+    );
     final SqlNode validatedQueryNode;
 
     try {
@@ -179,7 +192,14 @@ public class DruidPlanner implements Closeable
   {
     resetPlanner();
 
-    final ParsedNodes parsed = ParsedNodes.create(planner.parse(plannerContext.getSql()), plannerContext.getTimeZone());
+    final SqlNode sqlNode = planner.parse(plannerContext.getSql());
+    final ParsedNodes parsed = ParsedNodes.create(
+        sqlNode,
+        plannerContext,
+        buildSqlToRelConverter(),
+        planner.getTypeFactory(),
+        getValidator()
+    );
     final SqlNode validatedQueryNode = planner.validate(parsed.getQueryNode());
     final RelRoot rootQueryRel = planner.rel(validatedQueryNode);
 
@@ -210,7 +230,14 @@ public class DruidPlanner implements Closeable
   {
     resetPlanner();
 
-    final ParsedNodes parsed = ParsedNodes.create(planner.parse(plannerContext.getSql()), plannerContext.getTimeZone());
+    final SqlNode sqlNode = planner.parse(plannerContext.getSql());
+    final ParsedNodes parsed = ParsedNodes.create(
+        sqlNode,
+        plannerContext,
+        buildSqlToRelConverter(),
+        planner.getTypeFactory(),
+        getValidator()
+    );
 
     try {
       if (parsed.getIngestionGranularity() != null) {
@@ -760,6 +787,41 @@ public class DruidPlanner implements Closeable
     return StringUtils.format("Cannot build plan for query: %s. %s", plannerContext.getSql(), errorMessage);
   }
 
+  private SqlToRelConverter buildSqlToRelConverter()
+  {
+    final CalciteConnectionConfig connectionConfig;
+
+    if (frameworkConfig.getContext() != null) {
+      connectionConfig = frameworkConfig.getContext().unwrap(CalciteConnectionConfig.class);
+    } else {
+      Properties properties = new Properties();
+      properties.setProperty(
+          CalciteConnectionProperty.CASE_SENSITIVE.camelName(),
+          String.valueOf(PlannerFactory.PARSER_CONFIG.caseSensitive())
+      );
+      connectionConfig = new CalciteConnectionConfigImpl(properties);
+    }
+
+    Prepare.CatalogReader catalogReader = new CalciteCatalogReader(
+        CalciteSchema.from(frameworkConfig.getDefaultSchema().getParentSchema()),
+        CalciteSchema.from(frameworkConfig.getDefaultSchema()).path(null),
+        planner.getTypeFactory(),
+        connectionConfig
+    );
+    final RexBuilder rexBuilder = new RexBuilder(planner.getTypeFactory());
+    final RelOptCluster cluster = RelOptCluster.create(
+        new VolcanoPlanner(frameworkConfig.getCostFactory(), frameworkConfig.getContext()), rexBuilder
+    );
+    return new SqlToRelConverter(
+        (PlannerImpl) planner,
+        getValidator(),
+        catalogReader,
+        cluster,
+        frameworkConfig.getConvertletTable(),
+        frameworkConfig.getSqlToRelConverterConfig()
+    );
+  }
+
   private static class EnumeratorIterator<T> implements Iterator<T>
   {
     private final Iterator<T> it;
@@ -813,7 +875,13 @@ public class DruidPlanner implements Closeable
       this.replaceIntervals = replaceIntervals;
     }
 
-    static ParsedNodes create(final SqlNode node, DateTimeZone dateTimeZone) throws ValidationException
+    static ParsedNodes create(
+        final SqlNode node,
+        final PlannerContext plannerContext,
+        final SqlToRelConverter sqlToRelConverter,
+        final RelDataTypeFactory relDataTypeFactory,
+        final SqlValidator sqlValidator
+    ) throws ValidationException
     {
       SqlNode query = node;
       SqlExplain explain = null;
@@ -826,7 +894,14 @@ public class DruidPlanner implements Closeable
         if (query instanceof DruidSqlInsert) {
           return handleInsert(explain, (DruidSqlInsert) query);
         } else if (query instanceof DruidSqlReplace) {
-          return handleReplace(explain, (DruidSqlReplace) query, dateTimeZone);
+          return handleReplace(
+              explain,
+              (DruidSqlReplace) query,
+              plannerContext,
+              sqlToRelConverter,
+              relDataTypeFactory,
+              sqlValidator
+          );
         }
       }
 
@@ -863,7 +938,14 @@ public class DruidPlanner implements Closeable
       return new ParsedNodes(explain, druidSqlInsert, query, ingestionGranularity, null);
     }
 
-    static ParsedNodes handleReplace(SqlExplain explain, DruidSqlReplace druidSqlReplace, DateTimeZone dateTimeZone)
+    static ParsedNodes handleReplace(
+        SqlExplain explain,
+        DruidSqlReplace druidSqlReplace,
+        PlannerContext plannerContext,
+        SqlToRelConverter sqlToRelConverter,
+        RelDataTypeFactory relDataTypeFactory,
+        SqlValidator sqlValidator
+    )
         throws ValidationException
     {
       SqlNode query = druidSqlReplace.getSource();
@@ -877,13 +959,27 @@ public class DruidPlanner implements Closeable
         }
       }
 
-      SqlNode replaceTimeQuery = druidSqlReplace.getReplaceTimeQuery();
+      SqlNode replaceTimeQuery = sqlValidator.validateParameterizedExpression(
+          druidSqlReplace.getReplaceTimeQuery(),
+          ImmutableMap.of(
+              ColumnHolder.TIME_COLUMN_NAME,
+              relDataTypeFactory.createSqlType(SqlTypeName.TIMESTAMP, 3)
+          )
+      );
       if (replaceTimeQuery == null) {
-        throw new ValidationException("Missing time chunk information in OVERWRITE clause for REPLACE, set it to OVERWRITE WHERE <__time based condition> or set it to overwrite the entire table with OVERWRITE ALL.");
+        throw new ValidationException("Missing time chunk information in OVERWRITE clause for REPLACE, "
+                                      + "set it to OVERWRITE WHERE <__time based condition> or set it to overwrite "
+                                      + "the entire table with OVERWRITE ALL.");
       }
 
       Granularity ingestionGranularity = druidSqlReplace.getPartitionedBy();
-      List<String> replaceIntervals = DruidSqlParserUtils.validateQueryAndConvertToIntervals(replaceTimeQuery, ingestionGranularity, dateTimeZone);
+      List<String> replaceIntervals = DruidSqlParserUtils.validateQueryAndConvertToIntervals(
+          replaceTimeQuery,
+          ingestionGranularity,
+          plannerContext,
+          sqlToRelConverter,
+          relDataTypeFactory
+      );
 
       if (druidSqlReplace.getClusteredBy() != null) {
         query = DruidSqlParserUtils.convertClusterByToOrderBy(query, druidSqlReplace.getClusteredBy());

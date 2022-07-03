@@ -109,6 +109,30 @@ public class CalciteReplaceDmlTest extends CalciteIngestionDmlTest
   }
 
   @Test
+  public void testReplaceFromTableWithTimeInIntervalDeleteWhereClause()
+  {
+    testIngestionQuery()
+        .sql("REPLACE INTO dst OVERWRITE WHERE TIME_IN_INTERVAL(__time, '2000-01-01/P1D') "
+             + "SELECT * FROM foo PARTITIONED BY DAY")
+        .expectTarget("dst", FOO_TABLE_SIGNATURE)
+        .expectResources(dataSourceRead("foo"), dataSourceWrite("dst"))
+        .expectQuery(
+            newScanQueryBuilder()
+                .dataSource("foo")
+                .intervals(querySegmentSpec(Filtration.eternity()))
+                .columns("__time", "cnt", "dim1", "dim2", "dim3", "m1", "m2", "unique_dim1")
+                .context(
+                    addReplaceTimeChunkToQueryContext(
+                        queryContextWithGranularity(Granularities.DAY),
+                        "2000-01-01T00:00:00.000Z/2000-01-02T00:00:00.000Z"
+                    )
+                )
+                .build()
+        )
+        .verify();
+  }
+
+  @Test
   public void testReplaceFromTableWithTimeZoneInQueryContext()
   {
     HashMap<String, Object> context = new HashMap<>(DEFAULT_CONTEXT);
@@ -218,7 +242,7 @@ public class CalciteReplaceDmlTest extends CalciteIngestionDmlTest
         .sql("REPLACE INTO dst OVERWRITE WHERE __time LIKE '20__-02-01' SELECT * FROM foo PARTITIONED BY MONTH")
         .expectValidationError(
             SqlPlanningException.class,
-            "Unsupported operation in OVERWRITE WHERE clause: LIKE"
+            "Unsupported operation in OVERWRITE WHERE clause"
         )
         .verify();
   }
@@ -230,7 +254,7 @@ public class CalciteReplaceDmlTest extends CalciteIngestionDmlTest
         .sql("REPLACE INTO dst OVERWRITE WHERE TRUE SELECT * FROM foo PARTITIONED BY MONTH")
         .expectValidationError(
             SqlPlanningException.class,
-            "Invalid OVERWRITE WHERE clause"
+            "Unsupported operation in OVERWRITE WHERE clause"
         )
         .verify();
   }
@@ -242,7 +266,8 @@ public class CalciteReplaceDmlTest extends CalciteIngestionDmlTest
         .sql("REPLACE INTO dst OVERWRITE WHERE dim1 > TIMESTAMP '2000-01-05 00:00:00' SELECT * FROM foo PARTITIONED BY ALL TIME")
         .expectValidationError(
             SqlPlanningException.class,
-            "Only __time column is supported in OVERWRITE WHERE clause"
+            "Unsupported operation in OVERWRITE WHERE clause. "
+            + "Possible error: The OVERWRITE WHERE clause contains a column other than __time"
         )
         .verify();
   }

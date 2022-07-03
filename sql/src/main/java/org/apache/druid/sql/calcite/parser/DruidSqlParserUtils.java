@@ -21,6 +21,10 @@ package org.apache.druid.sql.calcite.parser;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -31,6 +35,9 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOrderBy;
 import org.apache.calcite.sql.SqlTimestampLiteral;
+import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.validate.SqlValidator;
+import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.ValidationException;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.StringUtils;
@@ -45,10 +52,13 @@ import org.apache.druid.query.filter.NotDimFilter;
 import org.apache.druid.query.filter.OrDimFilter;
 import org.apache.druid.query.ordering.StringComparators;
 import org.apache.druid.segment.column.ColumnHolder;
+import org.apache.druid.segment.column.RowSignature;
+import org.apache.druid.sql.calcite.expression.Expressions;
 import org.apache.druid.sql.calcite.expression.TimeUnits;
 import org.apache.druid.sql.calcite.expression.builtin.TimeFloorOperatorConversion;
 import org.apache.druid.sql.calcite.filtration.Filtration;
 import org.apache.druid.sql.calcite.filtration.MoveTimeFiltersToIntervals;
+import org.apache.druid.sql.calcite.planner.PlannerContext;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.Interval;
@@ -208,28 +218,49 @@ public class DruidSqlParserUtils
    *
    * @param replaceTimeQuery Sql node representing the query
    * @param granularity granularity of the query for validation
-   * @param dateTimeZone timezone
+   * @param plannerContext planner context for the query
+   * @param sqlToRelConverter converter for parsing the time query
+   * @param relDataTypeFactory type factory to create a type for time column
    * @return List of string representation of intervals
    * @throws ValidationException if the SqlNode cannot be converted to a list of intervals
    */
   public static List<String> validateQueryAndConvertToIntervals(
       SqlNode replaceTimeQuery,
       Granularity granularity,
-      DateTimeZone dateTimeZone
+      PlannerContext plannerContext,
+      SqlToRelConverter sqlToRelConverter,
+      RelDataTypeFactory relDataTypeFactory
   ) throws ValidationException
   {
     if (replaceTimeQuery instanceof SqlLiteral && ALL.equalsIgnoreCase(((SqlLiteral) replaceTimeQuery).toValue())) {
       return ImmutableList.of(ALL);
     }
 
-    DimFilter dimFilter = convertQueryToDimFilter(replaceTimeQuery, dateTimeZone);
+    DimFilter dimFilter;
+    try {
+      RexNode rexNode = sqlToRelConverter.convertExpression(
+          replaceTimeQuery,
+          ImmutableMap.of(
+              ColumnHolder.TIME_COLUMN_NAME,
+              new RexInputRef(0, relDataTypeFactory.createSqlType(SqlTypeName.TIMESTAMP, 3))
+          )
+      );
+      RowSignature rowSignature = RowSignature.builder().addTimeColumn().build();
+      dimFilter = Expressions.toFilter(plannerContext, rowSignature, null, rexNode);
+    }
+    catch (RuntimeException re) {
+      throw new ValidationException("Unsupported operation in OVERWRITE WHERE clause. "
+                                    + "Possible error: The OVERWRITE WHERE clause contains a column other than "
+                                    + ColumnHolder.TIME_COLUMN_NAME, re);
+    }
+
 
     Filtration filtration = Filtration.create(dimFilter);
     filtration = MoveTimeFiltersToIntervals.instance().apply(filtration);
     List<Interval> intervals = filtration.getIntervals();
 
     if (filtration.getDimFilter() != null) {
-      throw new ValidationException("Only " + ColumnHolder.TIME_COLUMN_NAME + " column is supported in OVERWRITE WHERE clause");
+      throw new ValidationException("Unsupported operation in OVERWRITE WHERE clause");
     }
 
     if (intervals.isEmpty()) {
@@ -239,7 +270,8 @@ public class DruidSqlParserUtils
     for (Interval interval : intervals) {
       DateTime intervalStart = interval.getStart();
       DateTime intervalEnd = interval.getEnd();
-      if (!granularity.bucketStart(intervalStart).equals(intervalStart) || !granularity.bucketStart(intervalEnd).equals(intervalEnd)) {
+      if (!granularity.bucketStart(intervalStart).equals(intervalStart) ||
+          !granularity.bucketStart(intervalEnd).equals(intervalEnd)) {
         throw new ValidationException("OVERWRITE WHERE clause contains an interval " + intervals +
                                       " which is not aligned with PARTITIONED BY granularity " + granularity);
       }
