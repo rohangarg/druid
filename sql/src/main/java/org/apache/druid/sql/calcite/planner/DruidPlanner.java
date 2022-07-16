@@ -85,7 +85,6 @@ import org.apache.druid.sql.calcite.rel.DruidUnionRel;
 import org.apache.druid.sql.calcite.run.QueryMaker;
 import org.apache.druid.sql.calcite.run.QueryMakerFactory;
 import org.apache.druid.utils.Throwables;
-import org.joda.time.DateTimeZone;
 
 import javax.annotation.Nullable;
 
@@ -126,7 +125,7 @@ public class DruidPlanner implements Closeable
   {
     resetPlanner();
     SqlNode root = planner.parse(plannerContext.getSql());
-    return ParsedNodes.create(root, plannerContext.getTimeZone());
+    return ParsedNodes.create(root, plannerContext, new CalcitePlanner(frameworkConfig));
   }
 
   /**
@@ -210,9 +209,7 @@ public class DruidPlanner implements Closeable
   @SuppressWarnings("RedundantThrows")
   public PlannerResult plan() throws SqlParseException, ValidationException, RelConversionException
   {
-    resetPlanner();
-
-    final ParsedNodes parsed = ParsedNodes.create(planner.parse(plannerContext.getSql()), plannerContext.getTimeZone());
+    ParsedNodes parsed = parse();
 
     try {
       if (parsed.getIngestionGranularity() != null) {
@@ -780,7 +777,11 @@ public class DruidPlanner implements Closeable
       this.replaceIntervals = replaceIntervals;
     }
 
-    static ParsedNodes create(final SqlNode node, DateTimeZone dateTimeZone) throws ValidationException
+    static ParsedNodes create(
+        final SqlNode node,
+        final PlannerContext plannerContext,
+        final CalcitePlanner replaceWherePlanner
+    ) throws ValidationException
     {
       SqlNode query = node;
       SqlExplain explain = null;
@@ -793,7 +794,7 @@ public class DruidPlanner implements Closeable
         if (query instanceof DruidSqlInsert) {
           return handleInsert(explain, (DruidSqlInsert) query);
         } else if (query instanceof DruidSqlReplace) {
-          return handleReplace(explain, (DruidSqlReplace) query, dateTimeZone);
+          return handleReplace(explain, (DruidSqlReplace) query, plannerContext, replaceWherePlanner);
         }
       }
 
@@ -830,7 +831,12 @@ public class DruidPlanner implements Closeable
       return new ParsedNodes(explain, druidSqlInsert, query, ingestionGranularity, null);
     }
 
-    static ParsedNodes handleReplace(SqlExplain explain, DruidSqlReplace druidSqlReplace, DateTimeZone dateTimeZone)
+    static ParsedNodes handleReplace(
+        SqlExplain explain,
+        DruidSqlReplace druidSqlReplace,
+        PlannerContext plannerContext,
+        CalcitePlanner wherePlanner
+    )
         throws ValidationException
     {
       SqlNode query = druidSqlReplace.getSource();
@@ -850,7 +856,12 @@ public class DruidPlanner implements Closeable
       }
 
       Granularity ingestionGranularity = druidSqlReplace.getPartitionedBy();
-      List<String> replaceIntervals = DruidSqlParserUtils.validateQueryAndConvertToIntervals(replaceTimeQuery, ingestionGranularity, dateTimeZone);
+      List<String> replaceIntervals = DruidSqlParserUtils.validateQueryAndConvertToIntervals(
+          replaceTimeQuery,
+          ingestionGranularity,
+          plannerContext,
+          wherePlanner
+      );
 
       if (druidSqlReplace.getClusteredBy() != null) {
         query = DruidSqlParserUtils.convertClusterByToOrderBy(query, druidSqlReplace.getClusteredBy());
