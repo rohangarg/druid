@@ -43,6 +43,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.metadata.CachingRelMetadataProvider;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeSystem;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexExecutor;
@@ -433,5 +434,25 @@ public class CalcitePlanner implements Planner, ViewExpander
       throw new IllegalArgumentException("cannot move from " + planner.state
           + " to " + this);
     }
+  }
+
+  // Druid methods
+  public SqlToRelConverter getSqlToRelConverter()
+  {
+    ensure(State.STATE_4_VALIDATED);
+    assert validatedSqlNode != null;
+    final RexBuilder rexBuilder = createRexBuilder();
+    final RelOptCluster cluster = RelOptCluster.create(planner, rexBuilder);
+    final SqlToRelConverter.Config config = SqlToRelConverter.configBuilder()
+                                                             .withConfig(sqlToRelConverterConfig)
+                                                             .withTrimUnusedFields(false)
+                                                             .withConvertTableAccess(false)
+                                                             .build();
+    return new SqlToRelConverter(this, validator, createCatalogReader(), cluster, convertletTable, config);
+  }
+
+  public RelDataTypeFactory getRelDataTypeFactory()
+  {
+    return RelOptCluster.create(planner, createRexBuilder()).getTypeFactory();
   }
 }
