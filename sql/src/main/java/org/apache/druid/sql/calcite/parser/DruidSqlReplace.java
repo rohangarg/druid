@@ -20,6 +20,9 @@
 package org.apache.druid.sql.calcite.parser;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
+import org.apache.calcite.prepare.BaseDruidSqlValidator;
+import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlInsert;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
@@ -28,10 +31,19 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlSpecialOperator;
 import org.apache.calcite.sql.SqlWriter;
+import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.validate.ParameterScope;
+import org.apache.calcite.sql.validate.SqlValidator;
+import org.apache.calcite.sql.validate.SqlValidatorImpl;
+import org.apache.calcite.sql.validate.SqlValidatorScope;
 import org.apache.druid.java.util.common.granularity.Granularity;
+import org.apache.druid.segment.column.ColumnHolder;
+import org.apache.druid.sql.calcite.planner.CalcitePlanner;
+import org.apache.druid.sql.calcite.planner.PlannerContext;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.Map;
 
 /**
  * Extends the 'replace' call to hold custom parameters specific to Druid i.e. PARTITIONED BY and the PARTITION SPECS
@@ -49,7 +61,7 @@ public class DruidSqlReplace extends SqlInsert
   // Used in the unparse function to generate the original query since we convert the string to an enum
   private final String partitionedByStringForUnparse;
 
-  private final SqlNode replaceTimeQuery;
+  private SqlNode replaceTimeQuery;
 
   @Nullable
   private final SqlNodeList clusteredBy;
@@ -148,6 +160,51 @@ public class DruidSqlReplace extends SqlInsert
         clusterByOpts.unparse(writer, leftPrec, rightPrec);
       }
       writer.endList(frame);
+    }
+  }
+
+  /**
+   * Currently, this only validates the 'WHERE' clause for the REPLACE statement. It is so because as of now, the INSERT
+   * nodes are not validated by the calcite side of the planner. When that happens, we should also validate the INSERT
+   * node. The current validation is being done by
+   * {@link org.apache.druid.sql.calcite.planner.DruidPlanner.ParsedNodes#convertReplaceWhereClause(PlannerContext, CalcitePlanner)}
+   * to convert 'WHERE' clause to a filter.
+   * @param validator validator used for the 'WHERE' clause validation
+   * @param scope scope of the SqlNode
+   */
+  @Override
+  public void validate(SqlValidator validator, SqlValidatorScope scope)
+  {
+    assert validator instanceof BaseDruidSqlValidator;
+    BaseDruidSqlValidator baseDruidSqlValidator = (BaseDruidSqlValidator) validator;
+    replaceTimeQuery = baseDruidSqlValidator.performUnconditionalRewrites(replaceTimeQuery, false);
+    replaceTimeQuery.validate(validator, new DruidParameterScope(
+        baseDruidSqlValidator,
+        ImmutableMap.of(ColumnHolder.TIME_COLUMN_NAME, validator.getTypeFactory().createSqlType(SqlTypeName.TIMESTAMP))
+    ));
+  }
+
+  /**
+   * An extension of {@link ParameterScope} which contains a fix for custom column resolution. The fix is present in a
+   * newer version of Calcite (1.22.0, issue : https://issues.apache.org/jira/browse/CALCITE-3476)
+   */
+  private static class DruidParameterScope extends ParameterScope
+  {
+    private final Map<String, RelDataType> nameToTypeMap;
+
+    public DruidParameterScope(
+        SqlValidatorImpl validator,
+        Map<String, RelDataType> nameToTypeMap
+    )
+    {
+      super(validator, nameToTypeMap);
+      this.nameToTypeMap = nameToTypeMap;
+    }
+
+    @Override
+    public RelDataType resolveColumn(String name, SqlNode ctx)
+    {
+      return nameToTypeMap.get(name);
     }
   }
 }

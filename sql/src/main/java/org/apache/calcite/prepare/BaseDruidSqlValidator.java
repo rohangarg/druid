@@ -22,6 +22,7 @@
 package org.apache.calcite.prepare;
 
 import org.apache.calcite.adapter.java.JavaTypeFactory;
+import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.validate.SqlConformance;
 
@@ -39,5 +40,15 @@ public class BaseDruidSqlValidator extends CalciteSqlValidator
       SqlConformance conformance)
   {
     super(opTab, catalogReader, typeFactory, conformance);
+  }
+
+  /**
+   This method updates the access modifier to public as compared to protected access from the parent. It is needed to
+   validate and resolve expressions in 'WHERE' clause mentioned in REPLACE queries.
+   */
+  @Override
+  public SqlNode performUnconditionalRewrites(SqlNode node, boolean underFrom)
+  {
+    return super.performUnconditionalRewrites(node, underFrom);
   }
 }

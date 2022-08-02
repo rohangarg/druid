@@ -26,7 +26,6 @@ import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlCall;
-import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlKind;
@@ -34,10 +33,7 @@ import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOrderBy;
-import org.apache.calcite.sql.SqlSelect;
-import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeName;
-import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.ValidationException;
 import org.apache.druid.java.util.common.IAE;
@@ -219,14 +215,14 @@ public class DruidSqlParserUtils
       SqlNode replaceTimeQuery,
       Granularity granularity,
       PlannerContext plannerContext,
-      CalcitePlanner wherePlanner
+      CalcitePlanner planner
   ) throws ValidationException
   {
     if (replaceTimeQuery instanceof SqlLiteral && ALL.equalsIgnoreCase(((SqlLiteral) replaceTimeQuery).toValue())) {
       return ImmutableList.of(ALL);
     }
 
-    Filtration filtration = Filtration.create(convertQueryToDimFilter(replaceTimeQuery, plannerContext, wherePlanner));
+    Filtration filtration = Filtration.create(convertQueryToDimFilter(replaceTimeQuery, plannerContext, planner));
     filtration = MoveTimeFiltersToIntervals.instance().apply(filtration);
     List<Interval> intervals = filtration.getIntervals();
 
@@ -254,70 +250,26 @@ public class DruidSqlParserUtils
   }
 
   /**
-   * Converts the replace time WHERE clause to a filter. It is done by creating a dummy query on a table with only
-   * __time column in it. The query's WHERE filter is the same as the replace time WHERE clause. After parsing and
-   * validating the dummy query, we try to only compile the WHERE clause to a DimFilter using {@link SqlToRelConverter}.
-   * There are more ways to just validate the replace time WHERE clause but they require a Calcite upgrade.
+   * Converts the replace time WHERE clause to a filter. It is done by trying to only compile the WHERE clause to a
+   * DimFilter using {@link SqlToRelConverter}.
    * @param replaceTimeQuery the replace time WHERE clause
    * @param plannerContext planner context
-   * @param wherePlanner a CalcitePlanner to plan the replace time WHERE clause
+   * @param planner a CalcitePlanner to plan the replace time WHERE clause
    * @return converted DimFilter from replaceTimeQuery
    * @throws ValidationException if the replace time WHERE clause can't be converted to a DimFilter
    */
   private static DimFilter convertQueryToDimFilter(
       SqlNode replaceTimeQuery,
       PlannerContext plannerContext,
-      CalcitePlanner wherePlanner
+      CalcitePlanner planner
   ) throws ValidationException
   {
-    // Create a dummy query with OVERWRITE WHERE clause and parse it.
-    // The dummy query will also ensure later that the 'WHERE' clause is a boolean expression.
-    SqlNode parseTree;
-    String dummyTableName = "t";
     try {
-      String replaceWhereFullSql = StringUtils.format(
-          "SELECT * from ( VALUES(MILLIS_TO_TIMESTAMP(0)) ) as %s(%s) WHERE %s",
-          dummyTableName,
-          ColumnHolder.TIME_COLUMN_NAME,
-          replaceTimeQuery.toSqlString(SqlDialect.CALCITE).getSql()
-      );
-      parseTree = wherePlanner.parse(replaceWhereFullSql);
-    }
-    catch (Exception e) {
-      throw new ValidationException("Unable to parse the OVERWRITE WHERE clause ", e);
-    }
-
-    try {
-      // Validate the query and ensure that its a simple select
-      parseTree = wherePlanner.validate(parseTree);
-      assert parseTree instanceof SqlSelect;
-      SqlToRelConverter sqlToRelConverter = wherePlanner.getSqlToRelConverter();
-      RelDataTypeFactory relDataTypeFactory = wherePlanner.getRelDataTypeFactory();
-      SqlNode whereClause = ((SqlSelect) parseTree).getWhere(); // extract the WHERE clause from the dummy query
-      if (whereClause instanceof SqlLiteral) {
-        throw new RuntimeException("Invalid OVERWRITE WHERE clause : " + whereClause);
-      }
-      // The validator rewrites the '__time' identifier in the WHERE clause as 't.__time' to fully identify the column.
-      // That rewrite leads to problems while doing convertExpression due to two reasons :
-      //   1. The convertExpression call needs context about 't' and 't.__time' to resolve them dynamically in the
-      //      expression. There are ways possible to do it but none of them is clean
-      //   2. The converted expression also references '__time' column as 't.__time'. The RexNode for the identifier
-      //      becomes a RexFieldAccess object, which our native expression conversion layer can't handle as of now.
-      // To avoid complex solutions for the two problems mentioned above, the 't.__time' references in WHERE parse tree
-      // are converted to '__time' using a custom SqlShuttle. The shuttle removes 't' prefix from all the identifiers.
-      whereClause = whereClause.accept(new SqlShuttle() {
-        @Override
-        public SqlNode visit(SqlIdentifier id)
-        {
-          if (id.names.size() > 1 && id.names.get(0).equals(dummyTableName)) {
-            return new SqlIdentifier(id.names.subList(1, id.names.size()), SqlParserPos.ZERO);
-          }
-          return super.visit(id);
-        }
-      });
+      SqlToRelConverter sqlToRelConverter = planner.getSqlToRelConverter();
+      RelDataTypeFactory relDataTypeFactory = planner.getRelDataTypeFactory();
       // convert the expression now by telling that '__time' column is a TIMESTAMP column to help in resolution
       RexNode convertedExpression = sqlToRelConverter.convertExpression(
-          whereClause,
+          replaceTimeQuery,
           ImmutableMap.of(
               ColumnHolder.TIME_COLUMN_NAME,
               new RexInputRef(0, relDataTypeFactory.createSqlType(SqlTypeName.TIMESTAMP, 3))
@@ -325,11 +277,6 @@ public class DruidSqlParserUtils
       );
       RowSignature rowSignature = RowSignature.builder().addTimeColumn().build();
       return Expressions.toFilter(plannerContext, rowSignature, null, convertedExpression);
-    }
-    catch (ValidationException ve) {
-      throw new ValidationException("Invalid OVERWRITE WHERE clause. Please ensure that only " +
-                                    ColumnHolder.TIME_COLUMN_NAME + " column and scalar functions are used in the "
-                                    + "OVERWRITE WHERE clause.", ve);
     }
     catch (Exception e) {
       throw new ValidationException("Invalid OVERWRITE WHERE clause", e);
