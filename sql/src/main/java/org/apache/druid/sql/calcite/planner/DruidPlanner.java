@@ -158,7 +158,7 @@ public class DruidPlanner implements Closeable
     Preconditions.checkState(state == State.START);
     resetPlanner();
     SqlNode root = planner.parse(plannerContext.getSql());
-    parsed = ParsedNodes.create(root);
+    parsed = ParsedNodes.create(root, plannerContext, new CalcitePlanner(frameworkConfig));
 
     try {
       if (parsed.getIngestionGranularity() != null) {
@@ -170,6 +170,13 @@ public class DruidPlanner implements Closeable
     }
     catch (JsonProcessingException e) {
       throw new ValidationException("Unable to serialize partition granularity.");
+    }
+
+    if (parsed.getReplaceIntervals() != null) {
+      plannerContext.getQueryContext().addSystemParam(
+          DruidSqlReplace.SQL_REPLACE_TIME_CHUNKS,
+          String.join(",", parsed.getReplaceIntervals())
+      );
     }
 
     try {
@@ -196,14 +203,6 @@ public class DruidPlanner implements Closeable
     validatedQueryNode.accept(resourceCollectorShuttle);
 
     resourceActions = new HashSet<>(resourceCollectorShuttle.getResourceActions());
-
-    parsed = parsed.convertReplaceWhereClause(plannerContext, planner);
-    if (parsed.getReplaceIntervals() != null) {
-      plannerContext.getQueryContext().addSystemParam(
-          DruidSqlReplace.SQL_REPLACE_TIME_CHUNKS,
-          String.join(",", parsed.getReplaceIntervals())
-      );
-    }
 
     if (parsed.getInsertOrReplace() != null) {
       // Check if CTX_SQL_OUTER_LIMIT is specified and fail the query if it is. CTX_SQL_OUTER_LIMIT being provided causes
@@ -844,7 +843,11 @@ public class DruidPlanner implements Closeable
       this.replaceIntervals = replaceIntervals;
     }
 
-    static ParsedNodes create(final SqlNode node) throws ValidationException
+    static ParsedNodes create(
+        final SqlNode node,
+        final PlannerContext plannerContext,
+        final CalcitePlanner replaceWherePlanner
+    ) throws ValidationException
     {
       SqlNode query = node;
       SqlExplain explain = null;
@@ -857,7 +860,7 @@ public class DruidPlanner implements Closeable
         if (query instanceof DruidSqlInsert) {
           return handleInsert(explain, (DruidSqlInsert) query);
         } else if (query instanceof DruidSqlReplace) {
-          return handleReplace(explain, (DruidSqlReplace) query);
+          return handleReplace(explain, (DruidSqlReplace) query, plannerContext, replaceWherePlanner);
         }
       }
 
@@ -894,7 +897,13 @@ public class DruidPlanner implements Closeable
       return new ParsedNodes(explain, druidSqlInsert, query, ingestionGranularity, null);
     }
 
-    static ParsedNodes handleReplace(SqlExplain explain, DruidSqlReplace druidSqlReplace) throws ValidationException
+    static ParsedNodes handleReplace(
+        SqlExplain explain,
+        DruidSqlReplace druidSqlReplace,
+        PlannerContext plannerContext,
+        CalcitePlanner wherePlanner
+    )
+        throws ValidationException
     {
       SqlNode query = druidSqlReplace.getSource();
 
@@ -909,12 +918,16 @@ public class DruidPlanner implements Closeable
 
       SqlNode replaceTimeQuery = druidSqlReplace.getReplaceTimeQuery();
       if (replaceTimeQuery == null) {
-        throw new ValidationException("Missing time chunk information in OVERWRITE clause for REPLACE, "
-                                      + "set it to OVERWRITE WHERE <__time based condition> or set it to overwrite "
-                                      + "the entire table with OVERWRITE ALL.");
+        throw new ValidationException("Missing time chunk information in OVERWRITE clause for REPLACE, set it to OVERWRITE WHERE <__time based condition> or set it to overwrite the entire table with OVERWRITE ALL.");
       }
 
       Granularity ingestionGranularity = druidSqlReplace.getPartitionedBy();
+      List<String> replaceIntervals = DruidSqlParserUtils.validateQueryAndConvertToIntervals(
+          replaceTimeQuery,
+          ingestionGranularity,
+          plannerContext,
+          wherePlanner
+      );
 
       if (druidSqlReplace.getClusteredBy() != null) {
         query = DruidSqlParserUtils.convertClusterByToOrderBy(query, druidSqlReplace.getClusteredBy());
@@ -924,27 +937,6 @@ public class DruidPlanner implements Closeable
         throw new ValidationException(StringUtils.format("Cannot execute [%s].", query.getKind()));
       }
 
-      return new ParsedNodes(explain, druidSqlReplace, query, ingestionGranularity, null);
-    }
-
-    public ParsedNodes convertReplaceWhereClause(
-        PlannerContext plannerContext,
-        CalcitePlanner planner
-    ) throws ValidationException
-    {
-      if (insertOrReplace == null ||
-          !(insertOrReplace instanceof DruidSqlReplace) ||
-          ((DruidSqlReplace) insertOrReplace).getReplaceTimeQuery() == null) {
-        return this;
-      }
-      DruidSqlReplace druidSqlReplace = (DruidSqlReplace) insertOrReplace;
-      druidSqlReplace.validate(planner.getValidator(), null);
-      List<String> replaceIntervals = DruidSqlParserUtils.validateQueryAndConvertToIntervals(
-          druidSqlReplace.getReplaceTimeQuery(),
-          ingestionGranularity,
-          plannerContext,
-          planner
-      );
       return new ParsedNodes(explain, druidSqlReplace, query, ingestionGranularity, replaceIntervals);
     }
 
