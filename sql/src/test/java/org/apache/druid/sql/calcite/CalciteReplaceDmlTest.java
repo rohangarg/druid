@@ -133,6 +133,30 @@ public class CalciteReplaceDmlTest extends CalciteIngestionDmlTest
   }
 
   @Test
+  public void testReplaceFromTableWithFunctionCallDeleteWhereClause()
+  {
+    testIngestionQuery()
+        .sql("REPLACE INTO dst OVERWRITE WHERE __time >= MILLIS_TO_TIMESTAMP(946684800000) "
+             + "AND __time < MILLIS_TO_TIMESTAMP(946771200000) SELECT * FROM foo PARTITIONED BY DAY")
+        .expectTarget("dst", FOO_TABLE_SIGNATURE)
+        .expectResources(dataSourceRead("foo"), dataSourceWrite("dst"))
+        .expectQuery(
+            newScanQueryBuilder()
+                .dataSource("foo")
+                .intervals(querySegmentSpec(Filtration.eternity()))
+                .columns("__time", "cnt", "dim1", "dim2", "dim3", "m1", "m2", "unique_dim1")
+                .context(
+                    addReplaceTimeChunkToQueryContext(
+                        queryContextWithGranularity(Granularities.DAY),
+                        "2000-01-01T00:00:00.000Z/2000-01-02T00:00:00.000Z"
+                    )
+                )
+                .build()
+        )
+        .verify();
+  }
+
+  @Test
   public void testReplaceFromTableWithTimeZoneInQueryContext()
   {
     HashMap<String, Object> context = new HashMap<>(DEFAULT_CONTEXT);

@@ -22,6 +22,10 @@ package org.apache.druid.sql.calcite.parser;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import org.apache.calcite.plan.RelOptPredicateList;
+import org.apache.calcite.plan.RelOptRuleCall;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.rel.rules.ReduceExpressionsRule;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
@@ -39,6 +43,7 @@ import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
+import org.apache.calcite.tools.RelBuilderFactory;
 import org.apache.calcite.tools.ValidationException;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.StringUtils;
@@ -61,6 +66,7 @@ import org.joda.time.Interval;
 import org.joda.time.Period;
 import org.joda.time.base.AbstractInterval;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -323,7 +329,13 @@ public class DruidSqlParserUtils
               new RexInputRef(0, relDataTypeFactory.createSqlType(SqlTypeName.TIMESTAMP, 3))
           )
       );
+      // try to reduce the filter expression
+      ArrayList<RexNode> expr = new ArrayList<>();
+      expr.add(convertedExpression);
+      ReplaceWhereReducer.reduce(sqlToRelConverter.convertSelect(((SqlSelect) parseTree), false), expr);
+      convertedExpression = expr.get(0);
       RowSignature rowSignature = RowSignature.builder().addTimeColumn().build();
+      // convert to native filter
       return Expressions.toFilter(plannerContext, rowSignature, null, convertedExpression);
     }
     catch (ValidationException ve) {
@@ -386,6 +398,34 @@ public class DruidSqlParserUtils
                 .map(StringUtils::toLowerCase)
                 .collect(Collectors.joining(", "))
       );
+    }
+  }
+
+  /**
+   * Dummy Rule class to expose expression reduction for 'WHERE' clause in REPLACE query. This is needed since we don't
+   * plan and optimize the 'WHERE' clause in REPLACE query.
+   */
+  private static class ReplaceWhereReducer extends ReduceExpressionsRule
+  {
+    protected ReplaceWhereReducer(
+        Class<? extends RelNode> clazz,
+        boolean matchNullability,
+        RelBuilderFactory relBuilderFactory,
+        String description
+    )
+    {
+      super(clazz, matchNullability, relBuilderFactory, description);
+    }
+
+    @Override
+    public void onMatch(RelOptRuleCall call)
+    {
+
+    }
+
+    public static void reduce(RelNode relNode, List<RexNode> rexNodeList)
+    {
+      reduceExpressions(relNode, rexNodeList, RelOptPredicateList.EMPTY);
     }
   }
 }
