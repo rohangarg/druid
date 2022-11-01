@@ -56,6 +56,21 @@ public class CountingOutputChannelFactory implements OutputChannelFactory
   }
 
   @Override
+  public OutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
+  {
+    final OutputChannel baseChannel = baseFactory.openChannel(name, deleteAfterRead, maxBytes);
+
+    return baseChannel.mapWritableChannel(
+        baseWritableChannel ->
+            new CountingWritableFrameChannel(
+                baseChannel.getWritableChannel(),
+                channelCounters,
+                baseChannel.getPartitionNumber()
+            )
+    );
+  }
+
+  @Override
   public OutputChannel openNilChannel(final int partitionNumber)
   {
     // No need for counters on nil channels: they never receive input.

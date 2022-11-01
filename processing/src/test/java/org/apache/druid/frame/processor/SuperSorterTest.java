@@ -118,14 +118,19 @@ public class SuperSorterTest
       final SettableFuture<ClusterByPartitions> outputPartitionsFuture = SettableFuture.create();
       final SuperSorterProgressTracker superSorterProgressTracker = new SuperSorterProgressTracker();
 
+      final File tempFolder = temporaryFolder.newFolder();
       final SuperSorter superSorter = new SuperSorter(
           Collections.singletonList(inputChannel.readable()),
           FrameReader.create(RowSignature.empty()),
           ClusterBy.none(),
           outputPartitionsFuture,
           exec,
-          temporaryFolder.newFolder(),
-          new FileOutputChannelFactory(temporaryFolder.newFolder(), FRAME_SIZE),
+          tempFolder,
+          new FileOutputChannelFactory(tempFolder, FRAME_SIZE),
+          new ComposingOutputChannelFactory(
+              ImmutableList.of(new FileOutputChannelFactory(tempFolder, FRAME_SIZE)),
+              new long[]{Long.MAX_VALUE}
+          ),
           () -> ArenaMemoryAllocator.createOnHeap(FRAME_SIZE),
           2,
           2,
@@ -279,14 +284,19 @@ public class SuperSorterTest
       final SettableFuture<ClusterByPartitions> clusterByPartitionsFuture = SettableFuture.create();
       final SuperSorterProgressTracker superSorterProgressTracker = new SuperSorterProgressTracker();
 
+      File tempFolder = temporaryFolder.newFolder();
       final SuperSorter superSorter = new SuperSorter(
           inputChannels,
           frameReader,
           clusterBy,
           clusterByPartitionsFuture,
           exec,
-          temporaryFolder.newFolder(),
-          new FileOutputChannelFactory(temporaryFolder.newFolder(), maxBytesPerFrame),
+          tempFolder,
+          new FileOutputChannelFactory(tempFolder, maxBytesPerFrame),
+          new ComposingOutputChannelFactory(
+              ImmutableList.of(new FileOutputChannelFactory(tempFolder, maxBytesPerFrame)),
+              new long[]{Long.MAX_VALUE}
+          ),
           () -> ArenaMemoryAllocator.createOnHeap(maxBytesPerFrame),
           maxActiveProcessors,
           maxChannelsPerProcessor,

@@ -22,6 +22,7 @@ package org.apache.druid.msq.exec;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Suppliers;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.FutureCallback;
@@ -41,6 +42,7 @@ import org.apache.druid.frame.key.ClusterBy;
 import org.apache.druid.frame.key.ClusterByPartitions;
 import org.apache.druid.frame.processor.BlockingQueueOutputChannelFactory;
 import org.apache.druid.frame.processor.Bouncer;
+import org.apache.druid.frame.processor.ComposingOutputChannelFactory;
 import org.apache.druid.frame.processor.FileOutputChannelFactory;
 import org.apache.druid.frame.processor.FrameChannelMuxer;
 import org.apache.druid.frame.processor.FrameProcessor;
@@ -709,11 +711,11 @@ public class WorkerImpl implements Worker
       // Therefore, the logic for cleaning the stage output in case of a worker/machine crash has to be external.
       // We currently take care of this in the controller.
       if (durableStageStorageEnabled) {
-        final String fileName = DurableStorageOutputChannelFactory.getPartitionFileName(
+        final String fileName = DurableStorageOutputChannelFactory.getFilePath(
             task.getControllerTaskId(),
             task.getId(),
             stageId.getStageNumber(),
-            partition
+            DurableStorageOutputChannelFactory.getPartitionName(partition)
         );
         try {
           MSQTasks.makeStorageConnector(context.injector()).deleteFile(fileName);
@@ -1048,6 +1050,10 @@ public class WorkerImpl implements Worker
         exec,
         sorterTmpDir,
         outputChannelFactory,
+        new ComposingOutputChannelFactory(
+            ImmutableList.of(new FileOutputChannelFactory(sorterTmpDir, memoryParameters.getLargeFrameSize())),
+            new long[]{Long.MAX_VALUE}
+        ),
         () -> ArenaMemoryAllocator.createOnHeap(memoryParameters.getLargeFrameSize()),
         memoryParameters.getSuperSorterMaxActiveProcessors(),
         memoryParameters.getSuperSorterMaxChannelsPerProcessor(),

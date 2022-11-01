@@ -22,6 +22,7 @@ package org.apache.druid.frame.processor;
 import com.google.common.base.Suppliers;
 import org.apache.druid.frame.Frame;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
+import org.apache.druid.frame.channel.FrameWithPartition;
 import org.apache.druid.frame.channel.ReadableFileFrameChannel;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.WritableFrameFileChannel;
@@ -55,9 +56,24 @@ public class FileOutputChannelFactory implements OutputChannelFactory
   @Override
   public OutputChannel openChannel(int partitionNumber) throws IOException
   {
-    FileUtils.mkdirp(fileChannelsDirectory);
-
     final String fileName = StringUtils.format("part_%06d_%s", partitionNumber, UUID.randomUUID().toString());
+    return buildChannel(fileName, true, partitionNumber, Long.MAX_VALUE);
+  }
+
+  @Override
+  public OutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
+  {
+    return buildChannel(name, deleteAfterRead, FrameWithPartition.NO_PARTITION, maxBytes);
+  }
+
+  private OutputChannel buildChannel(
+      String fileName,
+      boolean deleteAfterRead,
+      int partitionNumber,
+      long maxBytes
+  ) throws IOException
+  {
+    FileUtils.mkdirp(fileChannelsDirectory);
     final File file = new File(fileChannelsDirectory, fileName);
 
     final WritableFrameFileChannel writableChannel =
@@ -68,14 +84,16 @@ public class FileOutputChannelFactory implements OutputChannelFactory
                     StandardOpenOption.CREATE_NEW,
                     StandardOpenOption.WRITE
                 ),
-                ByteBuffer.allocate(Frame.compressionBufferSize(frameSize))
+                ByteBuffer.allocate(Frame.compressionBufferSize(frameSize)),
+                maxBytes
             )
         );
 
     final Supplier<ReadableFrameChannel> readableChannelSupplier = Suppliers.memoize(
         () -> {
           try {
-            final FrameFile frameFile = FrameFile.open(file, FrameFile.Flag.DELETE_ON_CLOSE);
+            final FrameFile frameFile = deleteAfterRead ? FrameFile.open(file, FrameFile.Flag.DELETE_ON_CLOSE)
+                                                        : FrameFile.open(file);
             return new ReadableFileFrameChannel(frameFile);
           }
           catch (IOException e) {

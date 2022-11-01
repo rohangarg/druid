@@ -84,11 +84,11 @@ public class DurableStorageInputChannelFactory implements InputChannelFactory
     final String workerTaskId = taskList.get().get(workerNumber);
 
     try {
-      final String remotePartitionPath = DurableStorageOutputChannelFactory.getPartitionFileName(
+      final String remotePartitionPath = DurableStorageOutputChannelFactory.getFilePath(
           controllerTaskId,
           workerTaskId,
           stageId.getStageNumber(),
-          partitionNumber
+          DurableStorageOutputChannelFactory.getPartitionName(partitionNumber)
       );
       RetryUtils.retry(() -> {
         if (!storageConnector.pathExists(remotePartitionPath)) {
