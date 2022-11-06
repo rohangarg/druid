@@ -92,6 +92,25 @@ public class Frame
   public static final int COMPRESSED_FRAME_ENVELOPE_SIZE = COMPRESSED_FRAME_HEADER_SIZE
                                                            + COMPRESSED_FRAME_TRAILER_SIZE;
 
+  public static final Frame EMPTY_COLUMNAR = wrap(Memory.wrap(
+      ByteBuffer.allocate((int) HEADER_SIZE)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .put(FrameType.COLUMNAR.version())
+                .putLong(HEADER_SIZE)
+                .putInt(0)
+                .putInt(0)
+                .put((byte) 0)
+  ));
+  public static final Frame EMPTY_ROW_BASED = wrap(Memory.wrap(
+      ByteBuffer.allocate((int) HEADER_SIZE)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .put(FrameType.ROW_BASED.version())
+                .putLong(HEADER_SIZE)
+                .putInt(0)
+                .putInt(0)
+                .put((byte) 0)
+  ));
+
   private static final LZ4Compressor LZ4_COMPRESSOR = LZ4Factory.fastestInstance().fastCompressor();
   private static final LZ4SafeDecompressor LZ4_DECOMPRESSOR = LZ4Factory.fastestInstance().safeDecompressor();
 

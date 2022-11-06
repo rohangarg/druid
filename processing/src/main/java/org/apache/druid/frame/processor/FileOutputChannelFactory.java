@@ -23,6 +23,7 @@ import com.google.common.base.Suppliers;
 import org.apache.druid.frame.Frame;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
 import org.apache.druid.frame.channel.FrameWithPartition;
+import org.apache.druid.frame.channel.PartitionedReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableFileFrameChannel;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.WritableFrameFileChannel;
@@ -33,6 +34,7 @@ import org.apache.druid.java.util.common.StringUtils;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
@@ -57,43 +59,23 @@ public class FileOutputChannelFactory implements OutputChannelFactory
   public OutputChannel openChannel(int partitionNumber) throws IOException
   {
     final String fileName = StringUtils.format("part_%06d_%s", partitionNumber, UUID.randomUUID().toString());
-    return buildChannel(fileName, true, partitionNumber, Long.MAX_VALUE);
-  }
-
-  @Override
-  public OutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
-  {
-    return buildChannel(name, deleteAfterRead, FrameWithPartition.NO_PARTITION, maxBytes);
-  }
-
-  private OutputChannel buildChannel(
-      String fileName,
-      boolean deleteAfterRead,
-      int partitionNumber,
-      long maxBytes
-  ) throws IOException
-  {
     FileUtils.mkdirp(fileChannelsDirectory);
     final File file = new File(fileChannelsDirectory, fileName);
-
-    final WritableFrameFileChannel writableChannel =
-        new WritableFrameFileChannel(
-            FrameFileWriter.open(
-                Files.newByteChannel(
-                    file.toPath(),
-                    StandardOpenOption.CREATE_NEW,
-                    StandardOpenOption.WRITE
-                ),
-                ByteBuffer.allocate(Frame.compressionBufferSize(frameSize)),
-                maxBytes
-            )
-        );
-
+    WritableFrameFileChannel writableFrameFileChannel = new WritableFrameFileChannel(
+        FrameFileWriter.open(
+            Files.newByteChannel(
+                file.toPath(),
+                StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.WRITE
+            ),
+            ByteBuffer.allocate(Frame.compressionBufferSize(frameSize)),
+            Long.MAX_VALUE
+        )
+    );
     final Supplier<ReadableFrameChannel> readableChannelSupplier = Suppliers.memoize(
         () -> {
           try {
-            final FrameFile frameFile = deleteAfterRead ? FrameFile.open(file, FrameFile.Flag.DELETE_ON_CLOSE)
-                                                        : FrameFile.open(file);
+            final FrameFile frameFile = FrameFile.open(file);
             return new ReadableFileFrameChannel(frameFile);
           }
           catch (IOException e) {
@@ -103,10 +85,56 @@ public class FileOutputChannelFactory implements OutputChannelFactory
     )::get;
 
     return OutputChannel.pair(
-        writableChannel,
+        writableFrameFileChannel,
         ArenaMemoryAllocator.createOnHeap(frameSize),
         readableChannelSupplier,
         partitionNumber
+    );
+  }
+
+  @Override
+  public PartitionedOutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
+  {
+    FileUtils.mkdirp(fileChannelsDirectory);
+    final File file = new File(fileChannelsDirectory, name);
+    WritableFrameFileChannel writableFrameFileChannel = new WritableFrameFileChannel(
+        FrameFileWriter.open(
+            Files.newByteChannel(
+                file.toPath(),
+                StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.WRITE
+            ),
+            ByteBuffer.allocate(Frame.compressionBufferSize(frameSize)),
+            maxBytes
+        )
+    );
+    Supplier<FrameFile> frameFileSupplier = Suppliers.memoize(
+        () -> {
+          try {
+            return deleteAfterRead ? FrameFile.open(file, FrameFile.Flag.DELETE_ON_CLOSE)
+                                   : FrameFile.open(file);
+          }
+          catch (IOException e) {
+            throw new UncheckedIOException(e);
+          }
+        }
+    )::get;
+    final Supplier<PartitionedReadableFrameChannel> partitionedReadableFrameChannelSupplier = Suppliers.memoize(
+        () -> (PartitionedReadableFrameChannel) pNum -> {
+          FrameFile fileHandle = frameFileSupplier.get();
+          fileHandle = fileHandle.newReference();
+          return new ReadableFileFrameChannel(
+              fileHandle,
+              fileHandle.getPartitionStartFrame(pNum),
+              fileHandle.getPartitionStartFrame(pNum + 1)
+          );
+        }
+    )::get;
+
+    return PartitionedOutputChannel.pair(
+        writableFrameFileChannel,
+        ArenaMemoryAllocator.createOnHeap(frameSize),
+        partitionedReadableFrameChannelSupplier
     );
   }
 

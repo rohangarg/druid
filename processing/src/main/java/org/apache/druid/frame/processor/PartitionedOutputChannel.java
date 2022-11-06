@@ -19,14 +19,105 @@
 
 package org.apache.druid.frame.processor;
 
+import com.google.common.base.Preconditions;
+import com.google.common.base.Suppliers;
+import org.apache.druid.frame.allocation.MemoryAllocator;
+import org.apache.druid.frame.channel.PartitionedReadableFrameChannel;
+import org.apache.druid.frame.channel.WritableFrameChannel;
+import org.apache.druid.java.util.common.ISE;
+
+import javax.annotation.Nullable;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
 public class PartitionedOutputChannel
 {
-  private final OutputChannel delegate;
+  @Nullable
+  private final WritableFrameChannel writableChannel;
+  @Nullable
+  private final MemoryAllocator frameMemoryAllocator;
+  private final Supplier<PartitionedReadableFrameChannel> readableChannelSupplier;
 
-  public PartitionedOutputChannel(OutputChannel delegate)
+  private PartitionedOutputChannel(
+      @Nullable final WritableFrameChannel writableChannel,
+      @Nullable final MemoryAllocator frameMemoryAllocator,
+      final Supplier<PartitionedReadableFrameChannel> readableChannelSupplier
+  )
   {
-    this.delegate = delegate;
+    this.writableChannel = writableChannel;
+    this.frameMemoryAllocator = frameMemoryAllocator;
+    this.readableChannelSupplier = readableChannelSupplier;
   }
 
+  /**
+   * Creates an output channel pair.
+   *
+   * @param writableChannel         writable channel for producer
+   * @param frameMemoryAllocator    memory allocator for producer to use while writing frames to the channel
+   * @param readableChannelSupplier readable channel for consumer. May be called multiple times, so you should wrap this
+   *                                in {@link Suppliers#memoize} if needed.
+   */
+  public static PartitionedOutputChannel pair(
+      final WritableFrameChannel writableChannel,
+      final MemoryAllocator frameMemoryAllocator,
+      final Supplier<PartitionedReadableFrameChannel> readableChannelSupplier
+  )
+  {
+    return new PartitionedOutputChannel(
+        Preconditions.checkNotNull(writableChannel, "writableChannel"),
+        Preconditions.checkNotNull(frameMemoryAllocator, "frameMemoryAllocator"),
+        readableChannelSupplier
+    );
+  }
 
+  /**
+   * Returns the writable channel of this pair. The producer writes to this channel.
+   */
+  public WritableFrameChannel getWritableChannel()
+  {
+    if (writableChannel == null) {
+      throw new ISE("Writable channel is not available");
+    } else {
+      return writableChannel;
+    }
+  }
+
+  /**
+   * Returns the memory allocator for the writable channel. The producer uses this to generate frames for the channel.
+   */
+  public MemoryAllocator getFrameMemoryAllocator()
+  {
+    if (frameMemoryAllocator == null) {
+      throw new ISE("Writable channel is not available");
+    } else {
+      return frameMemoryAllocator;
+    }
+  }
+
+  /**
+   * Returns the readable channel of this pair. This readable channel may, or may not, be usable before the
+   * writable channel is closed. It depends on whether the channel pair was created in a stream-capable manner or not.
+   */
+  public PartitionedReadableFrameChannel getReadableChannel()
+  {
+    return readableChannelSupplier.get();
+  }
+
+  public Supplier<PartitionedReadableFrameChannel> getReadableChannelSupplier()
+  {
+    return readableChannelSupplier;
+  }
+
+  public PartitionedOutputChannel mapWritableChannel(final Function<WritableFrameChannel, WritableFrameChannel> mapFn)
+  {
+    if (writableChannel == null) {
+      return this;
+    } else {
+      return new PartitionedOutputChannel(
+          mapFn.apply(writableChannel),
+          frameMemoryAllocator,
+          readableChannelSupplier
+      );
+    }
+  }
 }

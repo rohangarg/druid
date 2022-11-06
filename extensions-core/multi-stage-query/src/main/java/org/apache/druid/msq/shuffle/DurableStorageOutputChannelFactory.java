@@ -25,12 +25,14 @@ import org.apache.druid.common.utils.IdUtils;
 import org.apache.druid.frame.Frame;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
 import org.apache.druid.frame.channel.FrameWithPartition;
+import org.apache.druid.frame.channel.PartitionedReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableInputStreamFrameChannel;
 import org.apache.druid.frame.channel.WritableFrameFileChannel;
 import org.apache.druid.frame.file.FrameFileWriter;
 import org.apache.druid.frame.processor.OutputChannel;
 import org.apache.druid.frame.processor.OutputChannelFactory;
+import org.apache.druid.frame.processor.PartitionedOutputChannel;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.storage.StorageConnector;
@@ -90,7 +92,7 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
   }
 
   @Override
-  public OutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
+  public PartitionedOutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
   {
     return buildChannel(name, deleteAfterRead, FrameWithPartition.NO_PARTITION, maxBytes);
   }

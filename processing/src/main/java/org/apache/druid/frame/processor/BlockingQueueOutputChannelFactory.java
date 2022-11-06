@@ -22,6 +22,7 @@ package org.apache.druid.frame.processor;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
 import org.apache.druid.frame.channel.BlockingQueueFrameChannel;
 import org.apache.druid.frame.channel.FrameWithPartition;
+import org.apache.druid.java.util.common.IAE;
 
 import java.io.IOException;
 
@@ -50,15 +51,19 @@ public class BlockingQueueOutputChannelFactory implements OutputChannelFactory
   }
 
   @Override
-  public OutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
+  public PartitionedOutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
   {
     final int maxFrameCount = (int) Math.ceil((double) maxBytes / frameSize);
     final BlockingQueueFrameChannel channel = new BlockingQueueFrameChannel(maxFrameCount);
-    return OutputChannel.pair(
+    return PartitionedOutputChannel.pair(
         channel.writable(),
         ArenaMemoryAllocator.createOnHeap(frameSize),
-        channel::readable,
-        FrameWithPartition.NO_PARTITION
+        () -> (partition) -> {
+          if (partition != FrameWithPartition.NO_PARTITION) {
+            throw new IAE("Invalid partition");
+          }
+          return channel.readable();
+        }
     );
   }
 

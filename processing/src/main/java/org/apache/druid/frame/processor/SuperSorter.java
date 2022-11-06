@@ -40,6 +40,7 @@ import org.apache.druid.frame.FrameType;
 import org.apache.druid.frame.allocation.MemoryAllocator;
 import org.apache.druid.frame.channel.BlockingQueueFrameChannel;
 import org.apache.druid.frame.channel.FrameWithPartition;
+import org.apache.druid.frame.channel.PartitionedReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.WritableFrameChannel;
 import org.apache.druid.frame.file.FrameFile;
@@ -144,7 +145,7 @@ public class SuperSorter
   private List<OutputChannel> outputChannels = null;
 
   @GuardedBy("runWorkersLock")
-  private Map<String, Supplier<ReadableFrameChannel>> levelAndRankToReadableChannelMap = new HashMap<>();
+  private Map<String, Supplier<PartitionedReadableFrameChannel>> levelAndRankToReadableChannelMap = new HashMap<>();
 
   @GuardedBy("runWorkersLock")
   private int activeProcessors = 0;
@@ -522,7 +523,7 @@ public class SuperSorter
               if (inputsReady.remove(i)) {
                 in.add(
                     levelAndRankToReadableChannelMap.remove(StringUtils.format("merged.%d.%d", inLevel, i))
-                                                    .get()
+                                                    .get().openChannel(0)
                 );
               }
             }
@@ -588,7 +589,11 @@ public class SuperSorter
               fileHandle.getPartitionStartFrame(ultimateMergersRunSoFar + 1)
           )
       );*/
-      in.add(levelAndRankToReadableChannelMap.remove(StringUtils.format("merged.%d.%d", inLevel, i)).get());
+      in.add(
+          levelAndRankToReadableChannelMap.get(StringUtils.format("merged.%d.%d", inLevel, i))
+                                          .get()
+                                          .openChannel(ultimateMergersRunSoFar)
+      );
     }
 
     if (outputChannels == null) {
@@ -631,11 +636,11 @@ public class SuperSorter
                 ByteBuffer.allocate(Frame.compressionBufferSize(frameAllocator.capacity()))
             )
         );*/
-        OutputChannel outputChannel = intermediateOutputChannelFactory.openChannel(
+        PartitionedOutputChannel partitionedOutputChannel = intermediateOutputChannelFactory.openChannel(
             levelAndRankKey, true, Long.MAX_VALUE
         );
-        writableChannel = outputChannel.getWritableChannel();
-        levelAndRankToReadableChannelMap.put(levelAndRankKey, outputChannel.getReadableChannelSupplier());
+        writableChannel = partitionedOutputChannel.getWritableChannel();
+        levelAndRankToReadableChannelMap.put(levelAndRankKey, partitionedOutputChannel.getReadableChannelSupplier());
       }
 
       final FrameChannelMerger worker =
@@ -815,6 +820,7 @@ public class SuperSorter
 
     outputsReadyByLevel.clear();
     inputBuffer.clear();
+    levelAndRankToReadableChannelMap.clear();
 
     for (FrameFile frameFile : penultimateFrameFileCache.values()) {
       CloseableUtils.closeAndSuppressExceptions(

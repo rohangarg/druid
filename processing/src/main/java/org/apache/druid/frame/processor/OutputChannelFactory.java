@@ -34,7 +34,7 @@ public interface OutputChannelFactory
   /**
    * Create a channel pair tagged with a particular name and a flag to delete the channel data after its read.
    */
-  OutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException;
+  PartitionedOutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException;
 
   /**
    * Create a non-writable, always-empty channel pair tagged with a particular partition number.
