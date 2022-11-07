@@ -1,6 +1,7 @@
 package org.apache.druid.frame.processor;
 
 import com.google.common.base.Suppliers;
+import com.google.common.collect.Sets;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
 import org.apache.druid.frame.channel.ComposingReadableFrameChannel;
 import org.apache.druid.frame.channel.ComposingWritableFrameChannel;
@@ -13,6 +14,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 public class ComposingOutputChannelFactory implements OutputChannelFactory
@@ -71,18 +73,35 @@ public class ComposingOutputChannelFactory implements OutputChannelFactory
         limits,
         partitionToChannelMap
     );
-    PartitionedReadableFrameChannel partitionedReadableFrameChannel = partitionNumber -> {
-      // build an array of suppliers which will can supply a readable frame channel from a partitioned readable channel
-      // for a given partition number
-      Supplier<ReadableFrameChannel>[] suppliers = new Supplier[partitionedReaderSuppliers.length];
-      for (int i = 0; i < partitionedReaderSuppliers.length; i++) {
-        int finalI = i;
-        suppliers[i] = Suppliers.memoize(
-            () -> partitionedReaderSuppliers[finalI].get().openChannel(partitionNumber)
-        )::get;
+    PartitionedReadableFrameChannel partitionedReadableFrameChannel = new PartitionedReadableFrameChannel()
+    {
+      private final Set<Integer> openedChannels = Sets.newHashSetWithExpectedSize(1);
+
+      @Override
+      public ReadableFrameChannel openChannel(int partitionNumber)
+      {
+        Supplier<ReadableFrameChannel>[] suppliers = new Supplier[partitionedReaderSuppliers.length];
+        for (int i = 0; i < partitionedReaderSuppliers.length; i++) {
+          int finalI = i;
+          suppliers[i] = Suppliers.memoize(
+              () -> {
+                openedChannels.add(finalI);
+                return partitionedReaderSuppliers[finalI].get().openChannel(partitionNumber);
+              }
+          )::get;
+        }
+        return new ComposingReadableFrameChannel(partitionNumber, suppliers, partitionToChannelMap);
       }
-      return new ComposingReadableFrameChannel(partitionNumber, suppliers, partitionToChannelMap);
+
+      @Override
+      public void close() throws IOException
+      {
+        for (Integer channelId : openedChannels) {
+          partitionedReaderSuppliers[channelId].get().close();
+        }
+      }
     };
+
     return PartitionedOutputChannel.pair(
         writableFrameChannel,
         ArenaMemoryAllocator.createOnHeap(8_000_000),

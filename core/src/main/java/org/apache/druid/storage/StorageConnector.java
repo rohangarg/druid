@@ -74,6 +74,9 @@ public interface StorageConnector
    */
   InputStream read(String path) throws IOException;
 
+
+  InputStream rangeRead(String path, long from, long size) throws IOException;
+
   /**
    * Open an {@link OutputStream} for writing data to the path in the underlying storage system.
    * Most implementations prepend the input path with a basePath.

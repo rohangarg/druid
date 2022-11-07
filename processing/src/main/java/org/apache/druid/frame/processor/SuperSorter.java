@@ -55,12 +55,15 @@ import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.utils.CloseableUtils;
 
 import javax.annotation.Nullable;
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.math.RoundingMode;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -121,7 +124,6 @@ public class SuperSorter
   private final ClusterBy clusterBy;
   private final ListenableFuture<ClusterByPartitions> outputPartitionsFuture;
   private final FrameProcessorExecutor exec;
-  private final File directory;
   private final OutputChannelFactory outputChannelFactory;
   private final OutputChannelFactory intermediateOutputChannelFactory;
   private final Supplier<MemoryAllocator> innerFrameAllocatorMaker;
@@ -146,6 +148,9 @@ public class SuperSorter
 
   @GuardedBy("runWorkersLock")
   private Map<String, Supplier<PartitionedReadableFrameChannel>> levelAndRankToReadableChannelMap = new HashMap<>();
+
+  @GuardedBy("runWorkersLock")
+  private Map<String, List<PartitionedReadableFrameChannel>> partitionedReadableChannelsToClean = new HashMap<>();
 
   @GuardedBy("runWorkersLock")
   private int activeProcessors = 0;
@@ -238,7 +243,6 @@ public class SuperSorter
     this.clusterBy = clusterBy;
     this.outputPartitionsFuture = outputPartitionsFuture;
     this.exec = exec;
-    this.directory = temporaryDirectory;
     this.outputChannelFactory = outputChannelFactory;
     this.intermediateOutputChannelFactory = intermediateOutputChannelFactory;
     this.innerFrameAllocatorMaker = innerFrameAllocatorMaker;
@@ -521,10 +525,13 @@ public class SuperSorter
             final List<ReadableFrameChannel> in = new ArrayList<>();
             for (long i = currentSetStart; i < currentSetStart + maxChannelsPerProcessor; i++) {
               if (inputsReady.remove(i)) {
-                in.add(
-                    levelAndRankToReadableChannelMap.remove(StringUtils.format("merged.%d.%d", inLevel, i))
-                                                    .get().openChannel(0)
-                );
+                String levelAndRankKey = StringUtils.format("merged.%d.%d", inLevel, i);
+                PartitionedReadableFrameChannel partitionedReadableFrameChannel =
+                    levelAndRankToReadableChannelMap.remove(levelAndRankKey)
+                                                    .get();
+                in.add(partitionedReadableFrameChannel.openChannel(0));
+                partitionedReadableChannelsToClean.computeIfAbsent(levelAndRankKey, k -> new ArrayList<>())
+                                                  .add(partitionedReadableFrameChannel);
               }
             }
 
@@ -665,6 +672,16 @@ public class SuperSorter
           outputsReadyByLevel.computeIfAbsent(level, ignored2 -> new LongRBTreeSet())
                              .add(rank);
           superSorterProgressTracker.addMergedBatchesForLevel(level, 1);
+          for (PartitionedReadableFrameChannel partitionedReadableFrameChannel :
+              partitionedReadableChannelsToClean.getOrDefault(levelAndRankKey, new ArrayList<>())) {
+            try {
+              partitionedReadableFrameChannel.close();
+            }
+            catch (IOException e) {
+              log.warn(e, "Could not close channel for level [%d] and rank [%d]", level, rank);
+            }
+            partitionedReadableChannelsToClean.remove(levelAndRankKey);
+          }
         }
       });
     }
@@ -820,7 +837,17 @@ public class SuperSorter
 
     outputsReadyByLevel.clear();
     inputBuffer.clear();
+    for (Map.Entry<String, Supplier<PartitionedReadableFrameChannel>> cleanupEntry :
+        levelAndRankToReadableChannelMap.entrySet()) {
+      try {
+        cleanupEntry.getValue().get().close();
+      }
+      catch (IOException e) {
+        throw new UncheckedIOException("Unable to close channel for name : " + cleanupEntry.getKey(), e);
+      }
+    }
     levelAndRankToReadableChannelMap.clear();
+    partitionedReadableChannelsToClean.clear();
 
     for (FrameFile frameFile : penultimateFrameFileCache.values()) {
       CloseableUtils.closeAndSuppressExceptions(
@@ -843,11 +870,6 @@ public class SuperSorter
     }
 
     inputChannelsToRead.clear();
-  }
-
-  private File mergerOutputFile(final int level, final long rank)
-  {
-    return new File(directory, StringUtils.format("merged.%d.%d", level, rank));
   }
 
   /**

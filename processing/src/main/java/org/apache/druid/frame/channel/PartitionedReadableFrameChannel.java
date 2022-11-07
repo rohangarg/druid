@@ -1,6 +1,8 @@
 package org.apache.druid.frame.channel;
 
-public interface PartitionedReadableFrameChannel
+import java.io.Closeable;
+
+public interface PartitionedReadableFrameChannel extends Closeable
 {
   ReadableFrameChannel openChannel(int partitionNumber);
 }

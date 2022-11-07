@@ -606,7 +606,8 @@ public class WorkerImpl implements Worker
           id(),
           stageNumber,
           frameSize,
-          MSQTasks.makeStorageConnector(context.injector())
+          MSQTasks.makeStorageConnector(context.injector()),
+          context.tempDir()
       );
     } else {
       final File fileChannelDirectory =

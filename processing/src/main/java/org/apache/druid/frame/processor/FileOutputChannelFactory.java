@@ -120,14 +120,25 @@ public class FileOutputChannelFactory implements OutputChannelFactory
         }
     )::get;
     final Supplier<PartitionedReadableFrameChannel> partitionedReadableFrameChannelSupplier = Suppliers.memoize(
-        () -> (PartitionedReadableFrameChannel) pNum -> {
-          FrameFile fileHandle = frameFileSupplier.get();
-          fileHandle = fileHandle.newReference();
-          return new ReadableFileFrameChannel(
-              fileHandle,
-              fileHandle.getPartitionStartFrame(pNum),
-              fileHandle.getPartitionStartFrame(pNum + 1)
-          );
+        () -> new PartitionedReadableFrameChannel()
+        {
+          @Override
+          public ReadableFrameChannel openChannel(int partitionNumber)
+          {
+            FrameFile fileHandle = frameFileSupplier.get();
+            fileHandle = fileHandle.newReference();
+            return new ReadableFileFrameChannel(
+                fileHandle,
+                fileHandle.getPartitionStartFrame(partitionNumber),
+                fileHandle.getPartitionStartFrame(partitionNumber + 1)
+            );
+          }
+
+          @Override
+          public void close() throws IOException
+          {
+            frameFileSupplier.get().close();
+          }
         }
     )::get;
 

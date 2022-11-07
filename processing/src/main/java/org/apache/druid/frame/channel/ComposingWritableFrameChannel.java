@@ -3,8 +3,6 @@ package org.apache.druid.frame.channel;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
-import org.apache.druid.frame.Frame;
-import org.apache.druid.frame.FrameType;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -13,19 +11,19 @@ import java.util.Map;
 
 public class ComposingWritableFrameChannel implements WritableFrameChannel
 {
-  private final WritableFrameChannel[] parts;
+  private final WritableFrameChannel[] channels;
   private final long[] limits;
   private final Map<Integer, HashSet<Integer>> partitionToChannelMap;
   private int currentIndex;
   private long currentChannelBytes;
 
   public ComposingWritableFrameChannel(
-      WritableFrameChannel[] parts,
+      WritableFrameChannel[] channels,
       long[] limits,
       Map<Integer, HashSet<Integer>> partitionToChannelMap
   )
   {
-    this.parts = parts;
+    this.channels = channels;
     this.limits = limits;
     this.currentIndex = -1;
     this.currentChannelBytes = 0;
@@ -35,15 +33,16 @@ public class ComposingWritableFrameChannel implements WritableFrameChannel
   @Override
   public void write(FrameWithPartition frameWithPartition) throws IOException
   {
-    if (currentIndex >= parts.length) {
-      throw new RuntimeException("No more channels available to write. Total available channels : " + parts.length);
+    if (currentIndex >= channels.length) {
+      throw new RuntimeException("No more channels available to write. Total available channels : " + channels.length);
     }
 
     if (currentIndex >= 0 && currentChannelBytes < limits[currentIndex]) {
-      parts[currentIndex].write(frameWithPartition);
+      channels[currentIndex].write(frameWithPartition);
       // TODO : write header size as well
       currentChannelBytes += frameWithPartition.frame().numBytes();
-      partitionToChannelMap.computeIfAbsent(frameWithPartition.partition(), k -> Sets.newHashSet()).add(currentIndex);
+      partitionToChannelMap.computeIfAbsent(frameWithPartition.partition(), k -> Sets.newHashSetWithExpectedSize(1))
+                           .add(currentIndex);
     } else {
       currentIndex++;
       // write empty partitions in new writable channel to maintain partition sanity in writers. may not be necessary
@@ -63,24 +62,24 @@ public class ComposingWritableFrameChannel implements WritableFrameChannel
   @Override
   public void fail(@Nullable Throwable cause) throws IOException
   {
-    for (WritableFrameChannel composition : parts) {
-      composition.fail(cause);
+    for (WritableFrameChannel channel : channels) {
+      channel.fail(cause);
     }
   }
 
   @Override
   public void close() throws IOException
   {
-    for (WritableFrameChannel composition : parts) {
-      composition.close();
+    for (WritableFrameChannel channel : channels) {
+      channel.close();
     }
   }
 
   @Override
   public ListenableFuture<?> writabilityFuture()
   {
-    if (currentIndex > 0 && currentIndex == parts.length - 1) {
-      return parts[currentIndex].writabilityFuture();
+    if (currentIndex > 0 && currentIndex == channels.length - 1) {
+      return channels[currentIndex].writabilityFuture();
     }
     return Futures.immediateFuture(true);
   }

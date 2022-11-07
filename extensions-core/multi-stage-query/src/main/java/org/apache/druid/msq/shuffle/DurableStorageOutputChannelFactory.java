@@ -20,26 +20,33 @@
 package org.apache.druid.msq.shuffle;
 
 import com.google.common.base.Preconditions;
-import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.base.Suppliers;
+import com.google.common.io.CountingOutputStream;
+import org.apache.commons.io.IOUtils;
+import org.apache.datasketches.memory.Memory;
 import org.apache.druid.common.utils.IdUtils;
-import org.apache.druid.frame.Frame;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
-import org.apache.druid.frame.channel.FrameWithPartition;
-import org.apache.druid.frame.channel.PartitionedReadableFrameChannel;
-import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableInputStreamFrameChannel;
 import org.apache.druid.frame.channel.WritableFrameFileChannel;
+import org.apache.druid.frame.file.FrameFileFooter;
 import org.apache.druid.frame.file.FrameFileWriter;
 import org.apache.druid.frame.processor.OutputChannel;
 import org.apache.druid.frame.processor.OutputChannelFactory;
 import org.apache.druid.frame.processor.PartitionedOutputChannel;
+import org.apache.druid.java.util.common.FileUtils;
 import org.apache.druid.java.util.common.ISE;
+import org.apache.druid.java.util.common.MappedByteBufferHandler;
+import org.apache.druid.java.util.common.RetryUtils;
 import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.storage.StorageConnector;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.ByteOrder;
 import java.nio.channels.Channels;
+import java.util.function.Supplier;
 
 public class DurableStorageOutputChannelFactory implements OutputChannelFactory
 {
@@ -48,13 +55,15 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
   private final int stageNumber;
   private final int frameSize;
   private final StorageConnector storageConnector;
+  private final File tmpDir;
 
   public DurableStorageOutputChannelFactory(
       final String controllerTaskId,
       final String workerTaskId,
       final int stageNumber,
       final int frameSize,
-      final StorageConnector storageConnector
+      final StorageConnector storageConnector,
+      final File tmpDir
   )
   {
     this.controllerTaskId = Preconditions.checkNotNull(controllerTaskId, "controllerTaskId");
@@ -62,6 +71,7 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
     this.stageNumber = stageNumber;
     this.frameSize = frameSize;
     this.storageConnector = Preconditions.checkNotNull(storageConnector, "storageConnector");
+    this.tmpDir = Preconditions.checkNotNull(tmpDir, "tmpDir is null");
   }
 
   /**
@@ -73,7 +83,8 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
       final String workerTaskId,
       final int stageNumber,
       final int frameSize,
-      final StorageConnector storageConnector
+      final StorageConnector storageConnector,
+      final File tmpDir
   )
   {
     return new DurableStorageOutputChannelFactory(
@@ -81,36 +92,21 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
         workerTaskId,
         stageNumber,
         frameSize,
-        storageConnector
+        storageConnector,
+        tmpDir
     );
   }
 
   @Override
   public OutputChannel openChannel(int partitionNumber) throws IOException
   {
-    return buildChannel(getPartitionName(partitionNumber), false, partitionNumber, Long.MAX_VALUE);
-  }
-
-  @Override
-  public PartitionedOutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
-  {
-    return buildChannel(name, deleteAfterRead, FrameWithPartition.NO_PARTITION, maxBytes);
-  }
-
-  private OutputChannel buildChannel(
-      String fileName,
-      boolean deleteAfterRead,
-      int partitionNumber,
-      long maxBytes
-  ) throws IOException
-  {
-    final String fullFileName = getFilePath(controllerTaskId, workerTaskId, stageNumber, fileName);
+    final String fullFileName = getFilePath(controllerTaskId, workerTaskId, stageNumber, getPartitionName(partitionNumber));
     final WritableFrameFileChannel writableChannel =
         new WritableFrameFileChannel(
             FrameFileWriter.open(
                 Channels.newChannel(storageConnector.write(fullFileName)),
                 null,
-                maxBytes
+                Long.MAX_VALUE
             )
         );
 
@@ -119,59 +115,86 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
         ArenaMemoryAllocator.createOnHeap(frameSize),
         () -> {
           try {
-            ReadableFrameChannel delegate = ReadableInputStreamFrameChannel.open(
+            RetryUtils.retry(() -> {
+              if (!storageConnector.pathExists(fullFileName)) {
+                throw new ISE("File does not exist : %s", fullFileName);
+              }
+              return Boolean.TRUE;
+            }, (throwable) -> true, 10);
+          }
+          catch (Exception exception) {
+            throw new RuntimeException(exception);
+          }
+          try {
+            return ReadableInputStreamFrameChannel.open(
                 storageConnector.read(fullFileName),
                 fullFileName,
                 null
             );
-            // created to add deletion of channel data upon close of readable channel
-            return new ReadableFrameChannel()
-            {
-              @Override
-              public boolean isFinished()
-              {
-                return delegate.isFinished();
-              }
-
-              @Override
-              public boolean canRead()
-              {
-                return delegate.canRead();
-              }
-
-              @Override
-              public Frame read()
-              {
-                return delegate.read();
-              }
-
-              @Override
-              public ListenableFuture<?> readabilityFuture()
-              {
-                return delegate.readabilityFuture();
-              }
-
-              @Override
-              public void close()
-              {
-                if (deleteAfterRead) {
-                  try {
-                    storageConnector.deleteFile(fullFileName);
-                  }
-                  catch (IOException e) {
-                    delegate.close();
-                    throw new UncheckedIOException(e);
-                  }
-                }
-                delegate.close();
-              }
-            };
           }
           catch (IOException e) {
-            throw new UncheckedIOException(e);
+            throw new UncheckedIOException(StringUtils.format("Unable to read file : %s", fullFileName), e);
           }
         },
         partitionNumber
+    );
+  }
+
+  @Override
+  public PartitionedOutputChannel openChannel(String name, boolean deleteAfterRead, long maxBytes) throws IOException
+  {
+    final String fullFileName = getFilePath(controllerTaskId, workerTaskId, stageNumber, name);
+    final CountingOutputStream countingOutputStream = new CountingOutputStream(storageConnector.write(fullFileName));
+    final WritableFrameFileChannel writableChannel =
+        new WritableFrameFileChannel(
+            FrameFileWriter.open(
+                Channels.newChannel(countingOutputStream),
+                null,
+                maxBytes
+            )
+        );
+
+    final long channelSize = countingOutputStream.getCount();
+
+    // build supplier for reader the footer of the underlying frame file
+    final Supplier<FrameFileFooter> frameFileFooterSupplier = Suppliers.memoize(() -> {
+      try {
+        // read trailer and find the footer size
+        byte[] trailerBytes = new byte[FrameFileWriter.TRAILER_LENGTH];
+        int bytesRead = storageConnector.rangeRead(
+            fullFileName,
+            channelSize - FrameFileWriter.TRAILER_LENGTH,
+            FrameFileWriter.TRAILER_LENGTH
+        ).read(trailerBytes, 0, trailerBytes.length);
+        if (bytesRead != FrameFileWriter.TRAILER_LENGTH) {
+          throw new RuntimeException("Invalid frame file trailer for object : " + fullFileName);
+        }
+        Memory trailer = Memory.wrap(trailerBytes);
+        int footerLength = trailer.getInt(Integer.BYTES * 2L);
+
+        // read the footer into a file and map it to memory
+        File footerFile = new File(tmpDir, fullFileName + "_footer");
+        try(FileOutputStream footerFileStream = new FileOutputStream(footerFile)) {
+          IOUtils.copy(
+              storageConnector.rangeRead(fullFileName, channelSize - footerLength, footerLength),
+              footerFileStream
+          );
+        }
+        MappedByteBufferHandler mapHandle = FileUtils.map(footerFile);
+        Memory footerMemory = Memory.wrap(mapHandle.get(), ByteOrder.LITTLE_ENDIAN);
+
+        // create a frame file footer from the mapper memory
+        return new FrameFileFooter(footerMemory, channelSize);
+      }
+      catch (IOException e) {
+        throw new UncheckedIOException(e);
+      }
+    })::get;
+
+    return PartitionedOutputChannel.pair(
+        writableChannel,
+        ArenaMemoryAllocator.createOnHeap(frameSize),
+        () -> new DurableStoragePartitionedReadableFrameChannel(storageConnector, frameFileFooterSupplier, fullFileName)
     );
   }
 
