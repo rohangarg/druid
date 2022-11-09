@@ -29,7 +29,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.RandomAccessFile;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -73,9 +72,8 @@ public class LocalFileStorageConnector implements StorageConnector
   @Override
   public InputStream rangeRead(String path, long from, long size) throws IOException
   {
-    try (FileChannel fileChannel = FileChannel.open(fileWithBasePath(path).toPath(), StandardOpenOption.READ)) {
-      return new BoundedInputStream(Channels.newInputStream(fileChannel.position(from)), size);
-    }
+    FileChannel fileChannel = FileChannel.open(fileWithBasePath(path).toPath(), StandardOpenOption.READ);
+    return new BoundedInputStream(Channels.newInputStream(fileChannel.position(from)), size);
   }
 
   /**

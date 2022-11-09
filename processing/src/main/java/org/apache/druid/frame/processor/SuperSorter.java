@@ -147,7 +147,7 @@ public class SuperSorter
   private List<OutputChannel> outputChannels = null;
 
   @GuardedBy("runWorkersLock")
-  private Map<String, Supplier<PartitionedReadableFrameChannel>> levelAndRankToReadableChannelMap = new HashMap<>();
+  private Map<String, PartitionedOutputChannel> levelAndRankToReadableChannelMap = new HashMap<>();
 
   @GuardedBy("runWorkersLock")
   private Map<String, List<PartitionedReadableFrameChannel>> partitionedReadableChannelsToClean = new HashMap<>();
@@ -528,6 +528,7 @@ public class SuperSorter
                 String levelAndRankKey = StringUtils.format("merged.%d.%d", inLevel, i);
                 PartitionedReadableFrameChannel partitionedReadableFrameChannel =
                     levelAndRankToReadableChannelMap.remove(levelAndRankKey)
+                                                    .getReadableChannelSupplier()
                                                     .get();
                 in.add(partitionedReadableFrameChannel.openChannel(0));
                 partitionedReadableChannelsToClean.computeIfAbsent(levelAndRankKey, k -> new ArrayList<>())
@@ -598,6 +599,7 @@ public class SuperSorter
       );*/
       in.add(
           levelAndRankToReadableChannelMap.get(StringUtils.format("merged.%d.%d", inLevel, i))
+                                          .getReadableChannelSupplier()
                                           .get()
                                           .openChannel(ultimateMergersRunSoFar)
       );
@@ -644,10 +646,12 @@ public class SuperSorter
             )
         );*/
         PartitionedOutputChannel partitionedOutputChannel = intermediateOutputChannelFactory.openChannel(
-            levelAndRankKey, true, Long.MAX_VALUE
+            levelAndRankKey,
+            true,
+            Long.MAX_VALUE
         );
         writableChannel = partitionedOutputChannel.getWritableChannel();
-        levelAndRankToReadableChannelMap.put(levelAndRankKey, partitionedOutputChannel.getReadableChannelSupplier());
+        levelAndRankToReadableChannelMap.put(levelAndRankKey, partitionedOutputChannel);
       }
 
       final FrameChannelMerger worker =
@@ -680,8 +684,8 @@ public class SuperSorter
             catch (IOException e) {
               log.warn(e, "Could not close channel for level [%d] and rank [%d]", level, rank);
             }
-            partitionedReadableChannelsToClean.remove(levelAndRankKey);
           }
+          partitionedReadableChannelsToClean.remove(levelAndRankKey);
         }
       });
     }
@@ -837,10 +841,10 @@ public class SuperSorter
 
     outputsReadyByLevel.clear();
     inputBuffer.clear();
-    for (Map.Entry<String, Supplier<PartitionedReadableFrameChannel>> cleanupEntry :
+    for (Map.Entry<String, PartitionedOutputChannel> cleanupEntry :
         levelAndRankToReadableChannelMap.entrySet()) {
       try {
-        cleanupEntry.getValue().get().close();
+        cleanupEntry.getValue().getReadableChannelSupplier().get().close();
       }
       catch (IOException e) {
         throw new UncheckedIOException("Unable to close channel for name : " + cleanupEntry.getKey(), e);

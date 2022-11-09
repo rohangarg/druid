@@ -10,21 +10,21 @@ import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.WritableFrameChannel;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 public class ComposingOutputChannelFactory implements OutputChannelFactory
 {
-  private final List<OutputChannelFactory> parts;
+  private final List<OutputChannelFactory> channelFactories;
   private final long[] limits;
 
-  public ComposingOutputChannelFactory(List<OutputChannelFactory> parts, long[] limits)
+  public ComposingOutputChannelFactory(List<OutputChannelFactory> channelFactories, long[] limits)
   {
-    this.parts = parts;
+    this.channelFactories = channelFactories;
     this.limits = limits;
   }
 
@@ -34,25 +34,27 @@ public class ComposingOutputChannelFactory implements OutputChannelFactory
     WritableFrameChannel[] writableFrameChannels = new WritableFrameChannel[limits.length];
     Supplier<ReadableFrameChannel>[] readableFrameChannelSuppliers = new Supplier[limits.length];
     for (int i = 0; i < writableFrameChannels.length; i++) {
-      OutputChannel channel = parts.get(i).openChannel(partitionNumber);
+      OutputChannel channel = channelFactories.get(i).openChannel(partitionNumber);
       writableFrameChannels[i] = channel.getWritableChannel();
       readableFrameChannelSuppliers[i] = channel.getReadableChannelSupplier();
     }
-    Map<Integer, HashSet<Integer>> partitionToChannelMap = new HashMap<>();
+    AtomicReference<Map<Integer, HashSet<Integer>>> partitionToChannelMapRef = new AtomicReference<>();
     ComposingWritableFrameChannel writableFrameChannel = new ComposingWritableFrameChannel(
         writableFrameChannels,
         limits,
-        partitionToChannelMap
+        partitionToChannelMapRef
     );
-    ComposingReadableFrameChannel readableFrameChannel = new ComposingReadableFrameChannel(
-        partitionNumber,
-        readableFrameChannelSuppliers,
-        partitionToChannelMap
-    );
+    Supplier<ReadableFrameChannel> readableFrameChannelSupplier = Suppliers.memoize(
+        () -> new ComposingReadableFrameChannel(
+            partitionNumber,
+            readableFrameChannelSuppliers,
+            partitionToChannelMapRef
+        )
+    )::get;
     return OutputChannel.pair(
         writableFrameChannel,
         ArenaMemoryAllocator.createOnHeap(8_000_000),
-        () -> readableFrameChannel,
+        readableFrameChannelSupplier,
         partitionNumber
     );
   }
@@ -63,15 +65,15 @@ public class ComposingOutputChannelFactory implements OutputChannelFactory
     WritableFrameChannel[] writableFrameChannels = new WritableFrameChannel[limits.length];
     Supplier<PartitionedReadableFrameChannel>[] partitionedReaderSuppliers = new Supplier[limits.length];
     for (int i = 0; i < writableFrameChannels.length; i++) {
-      PartitionedOutputChannel channel = parts.get(i).openChannel(name, deleteAfterRead, maxBytes);
+      PartitionedOutputChannel channel = channelFactories.get(i).openChannel(name, deleteAfterRead, Math.min(limits[i], maxBytes));
       writableFrameChannels[i] = channel.getWritableChannel();
       partitionedReaderSuppliers[i] = channel.getReadableChannelSupplier();
     }
-    Map<Integer, HashSet<Integer>> partitionToChannelMap = new HashMap<>();
+    AtomicReference<Map<Integer, HashSet <Integer>>> partitionToChannelMapRef = new AtomicReference<>();
     ComposingWritableFrameChannel writableFrameChannel = new ComposingWritableFrameChannel(
         writableFrameChannels,
         limits,
-        partitionToChannelMap
+        partitionToChannelMapRef
     );
     PartitionedReadableFrameChannel partitionedReadableFrameChannel = new PartitionedReadableFrameChannel()
     {
@@ -90,7 +92,8 @@ public class ComposingOutputChannelFactory implements OutputChannelFactory
               }
           )::get;
         }
-        return new ComposingReadableFrameChannel(partitionNumber, suppliers, partitionToChannelMap);
+
+        return new ComposingReadableFrameChannel(partitionNumber, suppliers, partitionToChannelMapRef);
       }
 
       @Override

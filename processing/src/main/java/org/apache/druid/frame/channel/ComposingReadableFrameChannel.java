@@ -4,11 +4,13 @@ import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.druid.frame.Frame;
+import org.apache.druid.java.util.common.ISE;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 public class ComposingReadableFrameChannel implements ReadableFrameChannel
@@ -20,14 +22,14 @@ public class ComposingReadableFrameChannel implements ReadableFrameChannel
   public ComposingReadableFrameChannel(
       int partition,
       Supplier<ReadableFrameChannel>[] channels,
-      Map<Integer, HashSet<Integer>> partitionToChannelMap
+      AtomicReference<Map<Integer, HashSet<Integer>>> partitionToChannelMapRef
   )
   {
-    if (partitionToChannelMap.get(partition) == null) {
+    if (partitionToChannelMapRef.get().get(partition) == null) {
       // no writes for the partition, send an empty readable channel
       this.channels = new Supplier[]{() -> ReadableNilFrameChannel.INSTANCE};
     } else {
-      HashSet<Integer> validChannels = partitionToChannelMap.get(partition);
+      HashSet<Integer> validChannels = partitionToChannelMapRef.get().get(partition);
       Preconditions.checkState(validChannels.size() > 0, "No channels found for partition "  + partition);
       Supplier<ReadableFrameChannel>[] newChannels = new Supplier[validChannels.size()];
       ArrayList<Integer> sortedChannelIds = new ArrayList<>(validChannels);
@@ -46,41 +48,57 @@ public class ComposingReadableFrameChannel implements ReadableFrameChannel
   public boolean isFinished()
   {
     initCurrentChannel();
-    if (isLastIndex()) {
-      return currentChannel.isFinished();
+    if (!currentChannel.isFinished()) {
+      return false;
     }
-    return false;
+    currentChannel.close();
+    currentChannel = null;
+    if (isLastIndex()) {
+      return true;
+    }
+    ++currentIndex;
+    return isFinished();
   }
 
   @Override
   public boolean canRead()
   {
     initCurrentChannel();
-    if (isLastIndex()) {
-      return currentChannel.canRead();
+    if (currentChannel.canRead()) {
+      return true;
     }
-    return true;
+    if (currentChannel.isFinished()) {
+      currentChannel.close();
+      currentChannel = null;
+      if (isLastIndex()) {
+        return false;
+      }
+      ++currentIndex;
+      return canRead();
+    }
+    return false;
   }
 
   @Override
   public Frame read()
   {
-    initCurrentChannel();
-    if (currentChannel.canRead()) {
-      return currentChannel.read();
-    }
-    currentChannel.close();
-    if (isLastIndex()) {
-      throw new RuntimeException();
-    }
-    ++currentIndex;
-    return read();
+    return currentChannel.read();
   }
 
   @Override
   public ListenableFuture<?> readabilityFuture()
   {
-    return Futures.immediateFuture(true);
+    initCurrentChannel();
+    if (!currentChannel.isFinished()) {
+      return currentChannel.readabilityFuture();
+    }
+    currentChannel.close();
+    currentChannel = null;
+    if (isLastIndex()) {
+      return Futures.immediateFuture(true);
+    }
+    ++currentIndex;
+    return readabilityFuture();
   }
 
   @Override

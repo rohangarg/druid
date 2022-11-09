@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.druid.msq.shuffle;
+package org.apache.druid.frame.channel;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Suppliers;
@@ -25,9 +25,8 @@ import com.google.common.io.CountingOutputStream;
 import org.apache.commons.io.IOUtils;
 import org.apache.datasketches.memory.Memory;
 import org.apache.druid.common.utils.IdUtils;
+import org.apache.druid.frame.Frame;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
-import org.apache.druid.frame.channel.ReadableInputStreamFrameChannel;
-import org.apache.druid.frame.channel.WritableFrameFileChannel;
 import org.apache.druid.frame.file.FrameFileFooter;
 import org.apache.druid.frame.file.FrameFileWriter;
 import org.apache.druid.frame.processor.OutputChannel;
@@ -38,14 +37,21 @@ import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.MappedByteBufferHandler;
 import org.apache.druid.java.util.common.RetryUtils;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.storage.StorageConnector;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
+import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 public class DurableStorageOutputChannelFactory implements OutputChannelFactory
@@ -56,6 +62,7 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
   private final int frameSize;
   private final StorageConnector storageConnector;
   private final File tmpDir;
+  private final ExecutorService remoteInputStreamPool;
 
   public DurableStorageOutputChannelFactory(
       final String controllerTaskId,
@@ -72,6 +79,8 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
     this.frameSize = frameSize;
     this.storageConnector = Preconditions.checkNotNull(storageConnector, "storageConnector");
     this.tmpDir = Preconditions.checkNotNull(tmpDir, "tmpDir is null");
+    this.remoteInputStreamPool =
+        Executors.newCachedThreadPool(Execs.makeThreadFactory("-remote-fetcher-%d"));
   }
 
   /**
@@ -129,7 +138,8 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
             return ReadableInputStreamFrameChannel.open(
                 storageConnector.read(fullFileName),
                 fullFileName,
-                null
+                remoteInputStreamPool,
+                false
             );
           }
           catch (IOException e) {
@@ -149,36 +159,39 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
         new WritableFrameFileChannel(
             FrameFileWriter.open(
                 Channels.newChannel(countingOutputStream),
-                null,
+                ByteBuffer.allocate(Frame.compressionBufferSize(frameSize)),
                 maxBytes
             )
         );
 
-    final long channelSize = countingOutputStream.getCount();
+    final Supplier<Long> channelSizeSupplier = countingOutputStream::getCount;
 
     // build supplier for reader the footer of the underlying frame file
     final Supplier<FrameFileFooter> frameFileFooterSupplier = Suppliers.memoize(() -> {
       try {
         // read trailer and find the footer size
         byte[] trailerBytes = new byte[FrameFileWriter.TRAILER_LENGTH];
-        int bytesRead = storageConnector.rangeRead(
+        long channelSize = channelSizeSupplier.get();
+        try (InputStream reader = storageConnector.rangeRead(
             fullFileName,
             channelSize - FrameFileWriter.TRAILER_LENGTH,
             FrameFileWriter.TRAILER_LENGTH
-        ).read(trailerBytes, 0, trailerBytes.length);
-        if (bytesRead != FrameFileWriter.TRAILER_LENGTH) {
-          throw new RuntimeException("Invalid frame file trailer for object : " + fullFileName);
+        )) {
+          int bytesRead = reader.read(trailerBytes, 0, trailerBytes.length);
+          if (bytesRead != FrameFileWriter.TRAILER_LENGTH) {
+            throw new RuntimeException("Invalid frame file trailer for object : " + fullFileName);
+          }
         }
+
         Memory trailer = Memory.wrap(trailerBytes);
         int footerLength = trailer.getInt(Integer.BYTES * 2L);
 
         // read the footer into a file and map it to memory
         File footerFile = new File(tmpDir, fullFileName + "_footer");
-        try(FileOutputStream footerFileStream = new FileOutputStream(footerFile)) {
-          IOUtils.copy(
-              storageConnector.rangeRead(fullFileName, channelSize - footerLength, footerLength),
-              footerFileStream
-          );
+        try(FileOutputStream footerFileStream = new FileOutputStream(footerFile);
+            InputStream footerInputStream =
+                storageConnector.rangeRead(fullFileName, channelSize - footerLength, footerLength)) {
+          IOUtils.copy(footerInputStream, footerFileStream);
         }
         MappedByteBufferHandler mapHandle = FileUtils.map(footerFile);
         Memory footerMemory = Memory.wrap(mapHandle.get(), ByteOrder.LITTLE_ENDIAN);
@@ -194,7 +207,12 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
     return PartitionedOutputChannel.pair(
         writableChannel,
         ArenaMemoryAllocator.createOnHeap(frameSize),
-        () -> new DurableStoragePartitionedReadableFrameChannel(storageConnector, frameFileFooterSupplier, fullFileName)
+        () -> new DurableStoragePartitionedReadableFrameChannel(
+            storageConnector,
+            frameFileFooterSupplier,
+            fullFileName,
+            remoteInputStreamPool
+        )
     );
   }
 

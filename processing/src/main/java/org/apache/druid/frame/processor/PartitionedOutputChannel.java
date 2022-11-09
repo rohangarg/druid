@@ -94,15 +94,6 @@ public class PartitionedOutputChannel
     }
   }
 
-  /**
-   * Returns the readable channel of this pair. This readable channel may, or may not, be usable before the
-   * writable channel is closed. It depends on whether the channel pair was created in a stream-capable manner or not.
-   */
-  public PartitionedReadableFrameChannel getReadableChannel()
-  {
-    return readableChannelSupplier.get();
-  }
-
   public Supplier<PartitionedReadableFrameChannel> getReadableChannelSupplier()
   {
     return readableChannelSupplier;

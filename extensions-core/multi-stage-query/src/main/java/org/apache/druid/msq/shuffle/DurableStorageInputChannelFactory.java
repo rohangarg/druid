@@ -20,6 +20,7 @@
 package org.apache.druid.msq.shuffle;
 
 import com.google.common.base.Preconditions;
+import org.apache.druid.frame.channel.DurableStorageOutputChannelFactory;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableInputStreamFrameChannel;
 import org.apache.druid.java.util.common.IOE;
@@ -106,7 +107,8 @@ public class DurableStorageInputChannelFactory implements InputChannelFactory
       return ReadableInputStreamFrameChannel.open(
           inputStream,
           remotePartitionPath,
-          remoteInputStreamPool
+          remoteInputStreamPool,
+          false
       );
     }
     catch (Exception e) {

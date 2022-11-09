@@ -60,6 +60,8 @@ public class ReadableInputStreamFrameChannel implements ReadableFrameChannel
 
   private final ExecutorService executorService;
 
+  private final boolean framesOnly;
+
   /**
    * Parameter for manipulating retry sleep duration
    */
@@ -76,12 +78,14 @@ public class ReadableInputStreamFrameChannel implements ReadableFrameChannel
   private ReadableInputStreamFrameChannel(
       final InputStream inputStream,
       final ReadableByteChunksFrameChannel delegate,
-      final ExecutorService executorService
+      final ExecutorService executorService,
+      final boolean framesOnly
   )
   {
     this.inputStream = inputStream;
     this.delegate = delegate;
     this.executorService = executorService;
+    this.framesOnly = framesOnly;
   }
 
   /**
@@ -90,13 +94,15 @@ public class ReadableInputStreamFrameChannel implements ReadableFrameChannel
   public static ReadableInputStreamFrameChannel open(
       InputStream inputStream,
       String id,
-      ExecutorService executorService
+      ExecutorService executorService,
+      boolean framesOnly
   )
   {
     final ReadableInputStreamFrameChannel channel = new ReadableInputStreamFrameChannel(
         inputStream,
-        ReadableByteChunksFrameChannel.create(id),
-        executorService
+        ReadableByteChunksFrameChannel.create(id, framesOnly),
+        executorService,
+        framesOnly
     );
 
     channel.startReading();
