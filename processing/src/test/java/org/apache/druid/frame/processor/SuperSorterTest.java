@@ -130,22 +130,9 @@ public class SuperSorterTest
           tempFolder,
           new FileOutputChannelFactory(tempFolder, FRAME_SIZE),
           new ComposingOutputChannelFactory(
-              ImmutableList.of(new FileOutputChannelFactory(tempFolder, FRAME_SIZE)),
+              new OutputChannelFactory[]{new FileOutputChannelFactory(tempFolder, FRAME_SIZE)},
               new long[]{Long.MAX_VALUE}
           ),
-          /*new ComposingOutputChannelFactory(
-              ImmutableList.of(
-                  new DurableStorageOutputChannelFactory(
-                      "0",
-                      "0",
-                      0,
-                      FRAME_SIZE,
-                      new LocalFileStorageConnector(tempFolder),
-                      tempFolder
-                  )
-              ),
-              new long[]{Long.MAX_VALUE}
-          ),*/
           () -> ArenaMemoryAllocator.createOnHeap(FRAME_SIZE),
           2,
           2,
@@ -309,7 +296,7 @@ public class SuperSorterTest
           tempFolder,
           new FileOutputChannelFactory(tempFolder, maxBytesPerFrame),
           new ComposingOutputChannelFactory(
-              ImmutableList.of(
+              new OutputChannelFactory[] {
                   new FileOutputChannelFactory(tempFolder, maxBytesPerFrame),
                   new DurableStorageOutputChannelFactory(
                       "0",
@@ -319,17 +306,10 @@ public class SuperSorterTest
                       new LocalFileStorageConnector(tempFolder),
                       tempFolder
                   )
-              ),
-              new long[]{10_000, Long.MAX_VALUE}
+              },
+              new long[]{Long.MAX_VALUE, Long.MAX_VALUE} // effectively its only file based as of now
           ),
-//          new DurableStorageOutputChannelFactory(
-//              "0",
-//              "0",
-//              0,
-//              maxBytesPerFrame,
-//              new LocalFileStorageConnector(tempFolder),
-//              tempFolder
-//          ),
+          //new FileOutputChannelFactory(tempFolder, maxBytesPerFrame),
           () -> ArenaMemoryAllocator.createOnHeap(maxBytesPerFrame),
           maxActiveProcessors,
           maxChannelsPerProcessor,

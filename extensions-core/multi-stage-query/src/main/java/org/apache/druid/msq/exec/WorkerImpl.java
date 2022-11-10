@@ -22,7 +22,6 @@ package org.apache.druid.msq.exec;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.FutureCallback;
@@ -33,6 +32,7 @@ import com.google.common.util.concurrent.SettableFuture;
 import it.unimi.dsi.fastutil.bytes.ByteArrays;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
 import org.apache.druid.frame.channel.BlockingQueueFrameChannel;
+import org.apache.druid.frame.channel.DurableStorageOutputChannelFactory;
 import org.apache.druid.frame.channel.ReadableFileFrameChannel;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableNilFrameChannel;
@@ -103,7 +103,6 @@ import org.apache.druid.msq.kernel.worker.WorkerStageKernel;
 import org.apache.druid.msq.kernel.worker.WorkerStagePhase;
 import org.apache.druid.msq.querykit.DataSegmentProvider;
 import org.apache.druid.msq.shuffle.DurableStorageInputChannelFactory;
-import org.apache.druid.frame.channel.DurableStorageOutputChannelFactory;
 import org.apache.druid.msq.shuffle.WorkerInputChannelFactory;
 import org.apache.druid.msq.statistics.ClusterByStatisticsCollector;
 import org.apache.druid.msq.statistics.ClusterByStatisticsSnapshot;
@@ -1052,7 +1051,9 @@ public class WorkerImpl implements Worker
         sorterTmpDir,
         outputChannelFactory,
         new ComposingOutputChannelFactory(
-            ImmutableList.of(new FileOutputChannelFactory(sorterTmpDir, memoryParameters.getLargeFrameSize())),
+            new OutputChannelFactory[]{
+                new FileOutputChannelFactory(sorterTmpDir, memoryParameters.getLargeFrameSize())
+            },
             new long[]{Long.MAX_VALUE}
         ),
         () -> ArenaMemoryAllocator.createOnHeap(memoryParameters.getLargeFrameSize()),

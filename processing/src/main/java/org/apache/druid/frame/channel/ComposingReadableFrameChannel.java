@@ -1,16 +1,33 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package org.apache.druid.frame.channel;
 
 import com.google.common.base.Preconditions;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import org.apache.druid.frame.Frame;
-import org.apache.druid.java.util.common.ISE;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 public class ComposingReadableFrameChannel implements ReadableFrameChannel
@@ -22,15 +39,15 @@ public class ComposingReadableFrameChannel implements ReadableFrameChannel
   public ComposingReadableFrameChannel(
       int partition,
       Supplier<ReadableFrameChannel>[] channels,
-      AtomicReference<Map<Integer, HashSet<Integer>>> partitionToChannelMapRef
+      Map<Integer, HashSet<Integer>> partitionToChannelMap
   )
   {
-    if (partitionToChannelMapRef.get().get(partition) == null) {
+    if (partitionToChannelMap.get(partition) == null) {
       // no writes for the partition, send an empty readable channel
       this.channels = new Supplier[]{() -> ReadableNilFrameChannel.INSTANCE};
     } else {
-      HashSet<Integer> validChannels = partitionToChannelMapRef.get().get(partition);
-      Preconditions.checkState(validChannels.size() > 0, "No channels found for partition "  + partition);
+      HashSet<Integer> validChannels = partitionToChannelMap.get(partition);
+      Preconditions.checkState(validChannels.size() > 0, "No channels found for partition " + partition);
       Supplier<ReadableFrameChannel>[] newChannels = new Supplier[validChannels.size()];
       ArrayList<Integer> sortedChannelIds = new ArrayList<>(validChannels);
       Collections.sort(sortedChannelIds); // the data was written from lowest to highest channel

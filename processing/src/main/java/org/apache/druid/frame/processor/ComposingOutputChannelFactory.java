@@ -1,3 +1,22 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
 package org.apache.druid.frame.processor;
 
 import com.google.common.base.Suppliers;
@@ -10,19 +29,18 @@ import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.WritableFrameChannel;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 public class ComposingOutputChannelFactory implements OutputChannelFactory
 {
-  private final List<OutputChannelFactory> channelFactories;
+  private final OutputChannelFactory[] channelFactories;
   private final long[] limits;
 
-  public ComposingOutputChannelFactory(List<OutputChannelFactory> channelFactories, long[] limits)
+  public ComposingOutputChannelFactory(OutputChannelFactory[] channelFactories, long[] limits)
   {
     this.channelFactories = channelFactories;
     this.limits = limits;
@@ -34,21 +52,21 @@ public class ComposingOutputChannelFactory implements OutputChannelFactory
     WritableFrameChannel[] writableFrameChannels = new WritableFrameChannel[limits.length];
     Supplier<ReadableFrameChannel>[] readableFrameChannelSuppliers = new Supplier[limits.length];
     for (int i = 0; i < writableFrameChannels.length; i++) {
-      OutputChannel channel = channelFactories.get(i).openChannel(partitionNumber);
+      OutputChannel channel = channelFactories[i].openChannel(partitionNumber);
       writableFrameChannels[i] = channel.getWritableChannel();
       readableFrameChannelSuppliers[i] = channel.getReadableChannelSupplier();
     }
-    AtomicReference<Map<Integer, HashSet<Integer>>> partitionToChannelMapRef = new AtomicReference<>();
+    Map<Integer, HashSet<Integer>> partitionToChannelMap = new HashMap<>();
     ComposingWritableFrameChannel writableFrameChannel = new ComposingWritableFrameChannel(
         writableFrameChannels,
         limits,
-        partitionToChannelMapRef
+        partitionToChannelMap
     );
     Supplier<ReadableFrameChannel> readableFrameChannelSupplier = Suppliers.memoize(
         () -> new ComposingReadableFrameChannel(
             partitionNumber,
             readableFrameChannelSuppliers,
-            partitionToChannelMapRef
+            partitionToChannelMap
         )
     )::get;
     return OutputChannel.pair(
@@ -65,15 +83,15 @@ public class ComposingOutputChannelFactory implements OutputChannelFactory
     WritableFrameChannel[] writableFrameChannels = new WritableFrameChannel[limits.length];
     Supplier<PartitionedReadableFrameChannel>[] partitionedReaderSuppliers = new Supplier[limits.length];
     for (int i = 0; i < writableFrameChannels.length; i++) {
-      PartitionedOutputChannel channel = channelFactories.get(i).openChannel(name, deleteAfterRead, Math.min(limits[i], maxBytes));
+      PartitionedOutputChannel channel = channelFactories[i].openChannel(name, deleteAfterRead, Math.min(limits[i], maxBytes));
       writableFrameChannels[i] = channel.getWritableChannel();
       partitionedReaderSuppliers[i] = channel.getReadableChannelSupplier();
     }
-    AtomicReference<Map<Integer, HashSet <Integer>>> partitionToChannelMapRef = new AtomicReference<>();
+    Map<Integer, HashSet<Integer>> partitionToChannelMap = new HashMap<>();
     ComposingWritableFrameChannel writableFrameChannel = new ComposingWritableFrameChannel(
         writableFrameChannels,
         limits,
-        partitionToChannelMapRef
+        partitionToChannelMap
     );
     PartitionedReadableFrameChannel partitionedReadableFrameChannel = new PartitionedReadableFrameChannel()
     {
@@ -93,7 +111,7 @@ public class ComposingOutputChannelFactory implements OutputChannelFactory
           )::get;
         }
 
-        return new ComposingReadableFrameChannel(partitionNumber, suppliers, partitionToChannelMapRef);
+        return new ComposingReadableFrameChannel(partitionNumber, suppliers, partitionToChannelMap);
       }
 
       @Override
@@ -115,6 +133,6 @@ public class ComposingOutputChannelFactory implements OutputChannelFactory
   @Override
   public OutputChannel openNilChannel(int partitionNumber)
   {
-    throw new UnsupportedOperationException();
+    return OutputChannel.nil(partitionNumber);
   }
 }

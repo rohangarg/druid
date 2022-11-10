@@ -48,8 +48,6 @@ import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.Channels;
-import java.nio.file.Files;
-import java.nio.file.StandardOpenOption;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Supplier;
@@ -188,7 +186,7 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
 
         // read the footer into a file and map it to memory
         File footerFile = new File(tmpDir, fullFileName + "_footer");
-        try(FileOutputStream footerFileStream = new FileOutputStream(footerFile);
+        try (FileOutputStream footerFileStream = new FileOutputStream(footerFile);
             InputStream footerInputStream =
                 storageConnector.rangeRead(fullFileName, channelSize - footerLength, footerLength)) {
           IOUtils.copy(footerInputStream, footerFileStream);
