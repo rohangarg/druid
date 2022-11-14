@@ -19,6 +19,7 @@
 
 package org.apache.druid.storage.local;
 
+import org.apache.commons.io.input.BoundedInputStream;
 import org.apache.druid.java.util.common.FileUtils;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.StringUtils;
@@ -28,7 +29,10 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 
 /**
  * Implementation that uses local filesystem. All paths are appended with the base path, in such a way that its not visible
@@ -51,18 +55,17 @@ public class LocalFileStorageConnector implements StorageConnector
     return fileWithBasePath(path).exists();
   }
 
-  /**
-   * Reads the file present as basePath + path. Will throw an IO exception in case the file is not present.
-   * Closing of the stream is the responsibility of the caller.
-   *
-   * @param path
-   * @return
-   * @throws IOException
-   */
   @Override
   public InputStream read(String path) throws IOException
   {
     return Files.newInputStream(fileWithBasePath(path).toPath());
+  }
+
+  @Override
+  public InputStream readRange(String path, long from, long size) throws IOException
+  {
+    FileChannel fileChannel = FileChannel.open(fileWithBasePath(path).toPath(), StandardOpenOption.READ);
+    return new BoundedInputStream(Channels.newInputStream(fileChannel.position(from)), size);
   }
 
   /**

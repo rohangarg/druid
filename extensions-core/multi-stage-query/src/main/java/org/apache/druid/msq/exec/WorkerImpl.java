@@ -32,6 +32,7 @@ import com.google.common.util.concurrent.SettableFuture;
 import it.unimi.dsi.fastutil.bytes.ByteArrays;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
 import org.apache.druid.frame.channel.BlockingQueueFrameChannel;
+import org.apache.druid.frame.channel.DurableStorageOutputChannelFactory;
 import org.apache.druid.frame.channel.ReadableFileFrameChannel;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableNilFrameChannel;
@@ -41,6 +42,7 @@ import org.apache.druid.frame.key.ClusterBy;
 import org.apache.druid.frame.key.ClusterByPartitions;
 import org.apache.druid.frame.processor.BlockingQueueOutputChannelFactory;
 import org.apache.druid.frame.processor.Bouncer;
+import org.apache.druid.frame.processor.ComposingOutputChannelFactory;
 import org.apache.druid.frame.processor.FileOutputChannelFactory;
 import org.apache.druid.frame.processor.FrameChannelMuxer;
 import org.apache.druid.frame.processor.FrameProcessor;
@@ -101,7 +103,6 @@ import org.apache.druid.msq.kernel.worker.WorkerStageKernel;
 import org.apache.druid.msq.kernel.worker.WorkerStagePhase;
 import org.apache.druid.msq.querykit.DataSegmentProvider;
 import org.apache.druid.msq.shuffle.DurableStorageInputChannelFactory;
-import org.apache.druid.msq.shuffle.DurableStorageOutputChannelFactory;
 import org.apache.druid.msq.shuffle.WorkerInputChannelFactory;
 import org.apache.druid.msq.statistics.ClusterByStatisticsCollector;
 import org.apache.druid.msq.statistics.ClusterByStatisticsSnapshot;
@@ -604,7 +605,8 @@ public class WorkerImpl implements Worker
           id(),
           stageNumber,
           frameSize,
-          MSQTasks.makeStorageConnector(context.injector())
+          MSQTasks.makeStorageConnector(context.injector()),
+          context.tempDir()
       );
     } else {
       final File fileChannelDirectory =
@@ -709,11 +711,11 @@ public class WorkerImpl implements Worker
       // Therefore, the logic for cleaning the stage output in case of a worker/machine crash has to be external.
       // We currently take care of this in the controller.
       if (durableStageStorageEnabled) {
-        final String fileName = DurableStorageOutputChannelFactory.getPartitionFileName(
+        final String fileName = DurableStorageOutputChannelFactory.getFilePath(
             task.getControllerTaskId(),
             task.getId(),
             stageId.getStageNumber(),
-            partition
+            DurableStorageOutputChannelFactory.getPartitionName(partition)
         );
         try {
           MSQTasks.makeStorageConnector(context.injector()).deleteFile(fileName);
@@ -1048,6 +1050,13 @@ public class WorkerImpl implements Worker
         exec,
         sorterTmpDir,
         outputChannelFactory,
+        new ComposingOutputChannelFactory(
+            new OutputChannelFactory[]{
+                new FileOutputChannelFactory(sorterTmpDir, memoryParameters.getLargeFrameSize())
+            },
+            new long[]{Long.MAX_VALUE},
+            memoryParameters.getLargeFrameSize()
+        ),
         () -> ArenaMemoryAllocator.createOnHeap(memoryParameters.getLargeFrameSize()),
         memoryParameters.getSuperSorterMaxActiveProcessors(),
         memoryParameters.getSuperSorterMaxChannelsPerProcessor(),

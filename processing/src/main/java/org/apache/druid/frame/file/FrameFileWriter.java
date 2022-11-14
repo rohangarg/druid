@@ -50,6 +50,7 @@ public class FrameFileWriter implements Closeable
   private final WritableByteChannel channel;
   private final AppendableMemory tableOfContents;
   private final AppendableMemory partitions;
+  private final long maxBytesAllowed;
   private long bytesWritten = 0;
   private int numFrames = 0;
   private boolean usePartitions = true;
@@ -60,13 +61,15 @@ public class FrameFileWriter implements Closeable
       final WritableByteChannel channel,
       @Nullable final ByteBuffer compressionBuffer,
       final AppendableMemory tableOfContents,
-      final AppendableMemory partitions
+      final AppendableMemory partitions,
+      final long maxBytesAllowed
   )
   {
     this.channel = channel;
     this.compressionBuffer = compressionBuffer;
     this.tableOfContents = tableOfContents;
     this.partitions = partitions;
+    this.maxBytesAllowed = maxBytesAllowed;
   }
 
   /**
@@ -85,7 +88,34 @@ public class FrameFileWriter implements Closeable
         channel,
         compressionBuffer,
         AppendableMemory.create(allocator),
-        AppendableMemory.create(allocator)
+        AppendableMemory.create(allocator),
+        Long.MAX_VALUE
+    );
+  }
+
+  /**
+   * Opens a writer for a particular channel with a limit on the amount of data it can write.
+   *
+   * @param channel           destination channel
+   * @param compressionBuffer result of {@link Frame#compressionBufferSize} for the largest possible frame size that
+   *                          will be written to this file, or null to allocate buffers dynamically.
+   *                          Providing an explicit buffer here, if possible, improves performance.
+   * @param maxBytes          maximum number of bytes this frame writer can accept
+   */
+  public static FrameFileWriter open(
+      final WritableByteChannel channel,
+      @Nullable final ByteBuffer compressionBuffer,
+      final long maxBytes
+  )
+  {
+    // Unlimited allocator is for convenience. Only a few bytes per frame will be allocated.
+    final HeapMemoryAllocator allocator = HeapMemoryAllocator.unlimited();
+    return new FrameFileWriter(
+        channel,
+        compressionBuffer,
+        AppendableMemory.create(allocator),
+        AppendableMemory.create(allocator),
+        maxBytes
     );
   }
 
@@ -120,6 +150,9 @@ public class FrameFileWriter implements Closeable
     Channels.writeFully(channel, ByteBuffer.wrap(new byte[]{MARKER_FRAME}));
     bytesWritten++;
     bytesWritten += frame.writeTo(channel, true, getCompressionBuffer(frame.numBytes()));
+    if (bytesWritten > maxBytesAllowed) {
+      throw new ISE("Channel has no capacity");
+    }
 
     // Write *end* of frame to tableOfContents.
     final MemoryRange<WritableMemory> tocCursor = tableOfContents.cursor();

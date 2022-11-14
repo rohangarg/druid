@@ -20,6 +20,7 @@
 package org.apache.druid.msq.shuffle;
 
 import com.google.common.base.Preconditions;
+import org.apache.druid.frame.channel.DurableStorageOutputChannelFactory;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.ReadableInputStreamFrameChannel;
 import org.apache.druid.java.util.common.IOE;
@@ -84,11 +85,11 @@ public class DurableStorageInputChannelFactory implements InputChannelFactory
     final String workerTaskId = taskList.get().get(workerNumber);
 
     try {
-      final String remotePartitionPath = DurableStorageOutputChannelFactory.getPartitionFileName(
+      final String remotePartitionPath = DurableStorageOutputChannelFactory.getFilePath(
           controllerTaskId,
           workerTaskId,
           stageId.getStageNumber(),
-          partitionNumber
+          DurableStorageOutputChannelFactory.getPartitionName(partitionNumber)
       );
       RetryUtils.retry(() -> {
         if (!storageConnector.pathExists(remotePartitionPath)) {
@@ -106,7 +107,8 @@ public class DurableStorageInputChannelFactory implements InputChannelFactory
       return ReadableInputStreamFrameChannel.open(
           inputStream,
           remotePartitionPath,
-          remoteInputStreamPool
+          remoteInputStreamPool,
+          false
       );
     }
     catch (Exception e) {

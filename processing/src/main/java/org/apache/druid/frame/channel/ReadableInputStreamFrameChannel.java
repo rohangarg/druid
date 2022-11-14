@@ -90,12 +90,13 @@ public class ReadableInputStreamFrameChannel implements ReadableFrameChannel
   public static ReadableInputStreamFrameChannel open(
       InputStream inputStream,
       String id,
-      ExecutorService executorService
+      ExecutorService executorService,
+      boolean framesOnly
   )
   {
     final ReadableInputStreamFrameChannel channel = new ReadableInputStreamFrameChannel(
         inputStream,
-        ReadableByteChunksFrameChannel.create(id),
+        ReadableByteChunksFrameChannel.create(id, framesOnly),
         executorService
     );
 
