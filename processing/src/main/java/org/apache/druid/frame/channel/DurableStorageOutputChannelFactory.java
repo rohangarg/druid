@@ -170,7 +170,7 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
         // read trailer and find the footer size
         byte[] trailerBytes = new byte[FrameFileWriter.TRAILER_LENGTH];
         long channelSize = channelSizeSupplier.get();
-        try (InputStream reader = storageConnector.rangeRead(
+        try (InputStream reader = storageConnector.readRange(
             fullFileName,
             channelSize - FrameFileWriter.TRAILER_LENGTH,
             FrameFileWriter.TRAILER_LENGTH
@@ -188,7 +188,7 @@ public class DurableStorageOutputChannelFactory implements OutputChannelFactory
         File footerFile = new File(tmpDir, fullFileName + "_footer");
         try (FileOutputStream footerFileStream = new FileOutputStream(footerFile);
             InputStream footerInputStream =
-                storageConnector.rangeRead(fullFileName, channelSize - footerLength, footerLength)) {
+                storageConnector.readRange(fullFileName, channelSize - footerLength, footerLength)) {
           IOUtils.copy(footerInputStream, footerFileStream);
         }
         MappedByteBufferHandler mapHandle = FileUtils.map(footerFile);

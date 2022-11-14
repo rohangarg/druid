@@ -28,17 +28,18 @@ import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.function.Supplier;
 
 public class ComposingWritableFrameChannel implements WritableFrameChannel
 {
-  private final WritableFrameChannel[] channels;
+  private final Supplier<WritableFrameChannel>[] channels;
   private final long[] limits;
   private final Map<Integer, HashSet<Integer>> partitionToChannelMap;
   private int currentIndex;
   private long currentChannelBytes;
 
   public ComposingWritableFrameChannel(
-      WritableFrameChannel[] channels,
+      Supplier<WritableFrameChannel>[] channels,
       long[] limits,
       Map<Integer, HashSet<Integer>> partitionToChannelMap
   )
@@ -59,12 +60,12 @@ public class ComposingWritableFrameChannel implements WritableFrameChannel
 
     long frameBytes = frameWithPartition.frame().numBytes();
     if (currentIndex >= 0 && currentChannelBytes + frameBytes < limits[currentIndex]) {
-      channels[currentIndex].write(frameWithPartition);
+      channels[currentIndex].get().write(frameWithPartition);
       currentChannelBytes += frameBytes;
       partitionToChannelMap.computeIfAbsent(frameWithPartition.partition(), k -> Sets.newHashSetWithExpectedSize(1))
                            .add(currentIndex);
     } else {
-      channels[currentIndex].close();
+      channels[currentIndex].get().close();
       currentIndex++;
       currentChannelBytes = 0;
       // write empty partitions in new writable channel to maintain partition sanity in writers. may not be necessary
@@ -84,8 +85,8 @@ public class ComposingWritableFrameChannel implements WritableFrameChannel
   @Override
   public void fail(@Nullable Throwable cause) throws IOException
   {
-    for (WritableFrameChannel channel : channels) {
-      channel.fail(cause);
+    for (Supplier<WritableFrameChannel> channel : channels) {
+      channel.get().fail(cause);
     }
   }
 
@@ -93,7 +94,7 @@ public class ComposingWritableFrameChannel implements WritableFrameChannel
   public void close() throws IOException
   {
     if (currentIndex < channels.length) {
-      channels[currentIndex].close();
+      channels[currentIndex].get().close();
     }
   }
 
@@ -101,7 +102,7 @@ public class ComposingWritableFrameChannel implements WritableFrameChannel
   public ListenableFuture<?> writabilityFuture()
   {
     if (currentIndex == channels.length - 1) {
-      return channels[currentIndex].writabilityFuture();
+      return channels[currentIndex].get().writabilityFuture();
     }
     // TODO : the constant should instead be max frame size. also this logic might leave a space of 8MB free in the current writer
     // doesn't seem like the best thing, need to check further

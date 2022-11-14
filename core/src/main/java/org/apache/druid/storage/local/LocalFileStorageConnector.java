@@ -55,14 +55,6 @@ public class LocalFileStorageConnector implements StorageConnector
     return fileWithBasePath(path).exists();
   }
 
-  /**
-   * Reads the file present as basePath + path. Will throw an IO exception in case the file is not present.
-   * Closing of the stream is the responsibility of the caller.
-   *
-   * @param path
-   * @return
-   * @throws IOException
-   */
   @Override
   public InputStream read(String path) throws IOException
   {
@@ -70,7 +62,7 @@ public class LocalFileStorageConnector implements StorageConnector
   }
 
   @Override
-  public InputStream rangeRead(String path, long from, long size) throws IOException
+  public InputStream readRange(String path, long from, long size) throws IOException
   {
     FileChannel fileChannel = FileChannel.open(fileWithBasePath(path).toPath(), StandardOpenOption.READ);
     return new BoundedInputStream(Channels.newInputStream(fileChannel.position(from)), size);

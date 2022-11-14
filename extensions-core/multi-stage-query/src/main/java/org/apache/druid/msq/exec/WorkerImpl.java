@@ -1054,7 +1054,8 @@ public class WorkerImpl implements Worker
             new OutputChannelFactory[]{
                 new FileOutputChannelFactory(sorterTmpDir, memoryParameters.getLargeFrameSize())
             },
-            new long[]{Long.MAX_VALUE}
+            new long[]{Long.MAX_VALUE},
+            memoryParameters.getLargeFrameSize()
         ),
         () -> ArenaMemoryAllocator.createOnHeap(memoryParameters.getLargeFrameSize()),
         memoryParameters.getSuperSorterMaxActiveProcessors(),

@@ -60,7 +60,7 @@ public class DurableStoragePartitionedReadableFrameChannel implements Partitione
 
     try {
       return ReadableInputStreamFrameChannel.open(
-          storageConnector.rangeRead(frameFileFullPath, startByte, endByte - startByte),
+          storageConnector.readRange(frameFileFullPath, startByte, endByte - startByte),
           frameFileFullPath,
           remoteInputStreamPool,
           true

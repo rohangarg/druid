@@ -88,7 +88,7 @@ public class S3StorageConnector implements StorageConnector
   }
 
   @Override
-  public InputStream rangeRead(String path, long from, long size) throws IOException
+  public InputStream readRange(String path, long from, long size) throws IOException
   {
     return new RetryingInputStream<>(
         new GetObjectRequest(config.getBucket(), objectPath(path)).withRange(from, from + size - 1),

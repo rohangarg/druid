@@ -27,7 +27,6 @@ import org.apache.druid.frame.Frame;
 import org.apache.druid.frame.FrameType;
 import org.apache.druid.frame.allocation.ArenaMemoryAllocator;
 import org.apache.druid.frame.channel.BlockingQueueFrameChannel;
-import org.apache.druid.frame.channel.DurableStorageOutputChannelFactory;
 import org.apache.druid.frame.channel.ReadableFileFrameChannel;
 import org.apache.druid.frame.channel.ReadableFrameChannel;
 import org.apache.druid.frame.channel.WritableFrameChannel;
@@ -55,7 +54,6 @@ import org.apache.druid.segment.StorageAdapter;
 import org.apache.druid.segment.TestIndex;
 import org.apache.druid.segment.column.ColumnHolder;
 import org.apache.druid.segment.column.RowSignature;
-import org.apache.druid.storage.local.LocalFileStorageConnector;
 import org.apache.druid.testing.InitializedNullHandlingTest;
 import org.junit.After;
 import org.junit.Assert;
@@ -129,10 +127,7 @@ public class SuperSorterTest
           exec,
           tempFolder,
           new FileOutputChannelFactory(tempFolder, FRAME_SIZE),
-          new ComposingOutputChannelFactory(
-              new OutputChannelFactory[]{new FileOutputChannelFactory(tempFolder, FRAME_SIZE)},
-              new long[]{Long.MAX_VALUE}
-          ),
+          new FileOutputChannelFactory(tempFolder, FRAME_SIZE),
           () -> ArenaMemoryAllocator.createOnHeap(FRAME_SIZE),
           2,
           2,
@@ -295,21 +290,7 @@ public class SuperSorterTest
           exec,
           tempFolder,
           new FileOutputChannelFactory(tempFolder, maxBytesPerFrame),
-          new ComposingOutputChannelFactory(
-              new OutputChannelFactory[] {
-                  new FileOutputChannelFactory(tempFolder, maxBytesPerFrame),
-                  new DurableStorageOutputChannelFactory(
-                      "0",
-                      "0",
-                      0,
-                      maxBytesPerFrame,
-                      new LocalFileStorageConnector(tempFolder),
-                      tempFolder
-                  )
-              },
-              new long[]{Long.MAX_VALUE, Long.MAX_VALUE} // effectively its only file based as of now
-          ),
-          //new FileOutputChannelFactory(tempFolder, maxBytesPerFrame),
+          new FileOutputChannelFactory(tempFolder, maxBytesPerFrame),
           () -> ArenaMemoryAllocator.createOnHeap(maxBytesPerFrame),
           maxActiveProcessors,
           maxChannelsPerProcessor,
