@@ -57,27 +57,24 @@ public class FileOutputChannelFactory implements OutputChannelFactory
   @Override
   public OutputChannel openChannel(int partitionNumber) throws IOException
   {
-    FileUtils.mkdirp(fileChannelsDirectory);
-
     final String fileName = StringUtils.format("part_%06d_%s", partitionNumber, UUID.randomUUID().toString());
+    FileUtils.mkdirp(fileChannelsDirectory);
     final File file = new File(fileChannelsDirectory, fileName);
-
-    final WritableFrameFileChannel writableChannel =
-        new WritableFrameFileChannel(
-            FrameFileWriter.open(
-                Files.newByteChannel(
-                    file.toPath(),
-                    StandardOpenOption.CREATE_NEW,
-                    StandardOpenOption.WRITE
-                ),
-                ByteBuffer.allocate(Frame.compressionBufferSize(frameSize))
-            )
-        );
-
+    WritableFrameFileChannel writableFrameFileChannel = new WritableFrameFileChannel(
+        FrameFileWriter.open(
+            Files.newByteChannel(
+                file.toPath(),
+                StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.WRITE
+            ),
+            ByteBuffer.allocate(Frame.compressionBufferSize(frameSize)),
+            Long.MAX_VALUE
+        )
+    );
     final Supplier<ReadableFrameChannel> readableChannelSupplier = Suppliers.memoize(
         () -> {
           try {
-            final FrameFile frameFile = FrameFile.open(file, FrameFile.Flag.DELETE_ON_CLOSE);
+            final FrameFile frameFile = FrameFile.open(file);
             return new ReadableFileFrameChannel(frameFile);
           }
           catch (IOException e) {
@@ -87,7 +84,7 @@ public class FileOutputChannelFactory implements OutputChannelFactory
     )::get;
 
     return OutputChannel.pair(
-        writableChannel,
+        writableFrameFileChannel,
         ArenaMemoryAllocator.createOnHeap(frameSize),
         readableChannelSupplier,
         partitionNumber
