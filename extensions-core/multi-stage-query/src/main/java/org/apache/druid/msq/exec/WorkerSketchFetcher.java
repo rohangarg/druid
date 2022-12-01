@@ -40,6 +40,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.stream.IntStream;
 
 /**
@@ -119,21 +120,16 @@ public class WorkerSketchFetcher
     // Guarded by synchronized mergedStatisticsCollector
     final Set<Integer> finishedWorkers = new HashSet<>();
 
+    List<Future<?>> futures = new ArrayList<>();
     // Submit a task for each worker to fetch statistics
     IntStream.range(0, workerCount).forEach(workerNo -> {
-      executorService.submit(() -> {
+      futures.add(executorService.submit(() -> {
         ListenableFuture<ClusterByStatisticsSnapshot> snapshotFuture =
             workerClient.fetchClusterByStatisticsSnapshot(
                 workerTaskIds.get(workerNo),
                 stageDefinition.getId().getQueryId(),
                 stageDefinition.getStageNumber()
             );
-        partitionFuture.whenComplete((result, exception) -> {
-          if (exception != null || (result != null && result.isError())) {
-            snapshotFuture.cancel(true);
-          }
-        });
-
         try {
           ClusterByStatisticsSnapshot clusterByStatisticsSnapshot = snapshotFuture.get();
           if (clusterByStatisticsSnapshot == null) {
@@ -155,7 +151,16 @@ public class WorkerSketchFetcher
             mergedStatisticsCollector.clear();
           }
         }
-      });
+      }));
+    });
+    partitionFuture.whenComplete((result, exception) -> {
+      if (exception != null || (result != null && result.isError())) {
+        futures.forEach(future -> {
+          if (!future.isDone()) {
+            future.cancel(true);
+          }
+        });
+      }
     });
     return partitionFuture;
   }
