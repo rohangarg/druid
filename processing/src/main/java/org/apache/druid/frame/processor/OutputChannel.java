@@ -132,11 +132,6 @@ public class OutputChannel
     return readableChannelSupplier.get();
   }
 
-  public Supplier<ReadableFrameChannel> getReadableChannelSupplier()
-  {
-    return readableChannelSupplier;
-  }
-
   public int getPartitionNumber()
   {
     return partitionNumber;
