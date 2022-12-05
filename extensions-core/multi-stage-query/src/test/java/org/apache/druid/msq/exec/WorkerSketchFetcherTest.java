@@ -53,6 +53,7 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.easymock.EasyMock.mock;
 import static org.mockito.ArgumentMatchers.any;
@@ -117,26 +118,12 @@ public class WorkerSketchFetcherTest
   public void test_submitFetcherTask_parallelFetch_workerThrowsException_shouldCancelOtherTasks() throws Exception
   {
     // Store futures in a queue
-    final Queue<Future<?>> futureQueue = new ConcurrentLinkedQueue<>();
     final List<String> workerIds = ImmutableList.of("0", "1", "2", "3");
     final CountDownLatch latch = new CountDownLatch(workerIds.size());
 
-    target = spy(
-        new WorkerSketchFetcher(
-            workerClient,
-            ClusterStatisticsMergeMode.PARALLEL,
-            300_000_000,
-            executorService
-        )
-    );
+    target = new WorkerSketchFetcher(workerClient, ClusterStatisticsMergeMode.PARALLEL, 300_000_000);
 
-    // When submitting futures from the executor, add it to the list first.
-    doAnswer(invocation -> {
-      Future<?> future = spy((Future<?>) invocation.callRealMethod());
-      futureQueue.add(future);
-      return future;
-    }).when(executorService).submit(any(Runnable.class));
-
+    AtomicInteger cancelledCount = new AtomicInteger(0);
     doAnswer(invocation -> {
       String workerId = invocation.getArgument(0);
       if ("2".equals(workerId)) {
@@ -145,9 +132,17 @@ public class WorkerSketchFetcherTest
         latch.await();
         return Futures.immediateFailedFuture(new InterruptedException("interrupted"));
       } else {
-        latch.countDown();
-        latch.await();
-        return Futures.immediateFuture(mock(ClusterByStatisticsSnapshot.class));
+        // do a computation which is long and is interruptable so that it can capture cancel on the executor future
+        // supposed to simulate a long network call for fetching statistics
+        // somehow, wait() invocation doesn't capture interruption in my local experiment
+        try {
+          latch.countDown();
+          latch.await();
+          Thread.sleep(60_000);
+        } catch (InterruptedException ie) {
+          cancelledCount.getAndIncrement();
+        }
+        return Futures.immediateFailedFuture(null);
       }
     }).when(workerClient).fetchClusterByStatisticsSnapshot(any(), any(), anyInt());
 
@@ -165,10 +160,7 @@ public class WorkerSketchFetcherTest
     // Verify that the statistics collector was cleared due to the error.
     verify(mergedClusterByStatisticsCollector1, times(1)).clear();
     // Verify that other task futures were requested to be cancelled.
-    Assert.assertFalse(futureQueue.isEmpty());
-    for (Future<?> snapshotFuture : futureQueue) {
-      verify(snapshotFuture, times(1)).cancel(eq(true));
-    }
+    Assert.assertEquals(3, cancelledCount.get());
   }
 
   @Test
