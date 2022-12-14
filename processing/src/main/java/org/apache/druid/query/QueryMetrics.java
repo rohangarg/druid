@@ -343,6 +343,11 @@ public interface QueryMetrics<QueryType extends Query<?>>
   QueryMetrics<QueryType> reportNodeTime(long timeNs);
 
   /**
+   * Registers "node time" metric.
+   */
+  QueryMetrics<QueryType> reportNodeConnectWaitTime(long timeNs);
+
+  /**
    * Registers "node bytes" metric.
    */
   QueryMetrics<QueryType> reportNodeBytes(long byteCount);

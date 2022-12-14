@@ -23,6 +23,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.jaxrs.smile.SmileMediaTypes;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
@@ -451,6 +452,17 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
         LOG.error("Can not find Authenticator with Name [%s]", authenticationResult.getAuthenticatedBy());
       }
     }
+
+    String sqlQueryId =
+        sqlQuery != null ? (String) sqlQuery.getContext().getOrDefault(BaseQuery.SQL_QUERY_ID, null) : null;
+    long waitStartTime = System.nanoTime();
+    proxyRequest.onRequestBegin((request) -> {
+      // both sqlQueryId and query will be null for JDBC queries unless the user is setting them in context
+      QueryMetrics queryMetrics = buildQueryMetrics(proxyRequest.getHost(), sqlQueryId, null, query);
+      if (queryMetrics != null) {
+        queryMetrics.reportNodeConnectWaitTime(System.nanoTime() - waitStartTime).emit(emitter);
+      }
+    });
     super.sendProxyRequest(
         clientRequest,
         proxyResponse,
@@ -687,6 +699,34 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
     throw new IAE("Received an unknown Avatica protobuf request");
   }
 
+  @Nullable
+  private QueryMetrics<?> buildQueryMetrics(
+      String remoteAddress,
+      @Nullable String sqlQueryId,
+      @Nullable String queryId,
+      @Nullable Query query
+  )
+  {
+    QueryMetrics queryMetrics = null;
+    if (sqlQueryId != null) {
+      queryMetrics = queryMetricsFactory.makeMetrics();
+      queryMetrics.remoteAddress(remoteAddress);
+      // Setting sqlQueryId and queryId dimensions to the metric
+      queryMetrics.sqlQueryId(sqlQueryId);
+      if (queryId != null) { // query id is null for JDBC SQL
+        queryMetrics.queryId(queryId);
+      }
+    } else if (query != null) {
+      queryMetrics = DruidMetrics.makeRequestMetrics(
+          queryMetricsFactory,
+          warehouse.getToolChest(query),
+          query,
+          remoteAddress
+      );
+    }
+    return queryMetrics;
+  }
+
   private class MetricsEmittingProxyResponseListener<T> extends ProxyResponseListener
   {
     private final HttpServletRequest req;
@@ -892,23 +932,9 @@ public class AsyncQueryForwardingServlet extends AsyncProxyServlet implements Qu
 
     private void emitQueryTime(long requestTimeNs, boolean success, @Nullable String sqlQueryId, @Nullable String queryId)
     {
-      QueryMetrics queryMetrics;
-      if (sqlQueryId != null) {
-        queryMetrics = queryMetricsFactory.makeMetrics();
-        queryMetrics.remoteAddress(req.getRemoteAddr());
-        // Setting sqlQueryId and queryId dimensions to the metric
-        queryMetrics.sqlQueryId(sqlQueryId);
-        if (queryId != null) { // query id is null for JDBC SQL
-          queryMetrics.queryId(queryId);
-        }
-      } else {
-        queryMetrics = DruidMetrics.makeRequestMetrics(
-            queryMetricsFactory,
-            warehouse.getToolChest(query),
-            query,
-            req.getRemoteAddr()
-        );
-      }
+      Preconditions.checkState(sqlQueryId != null || queryId != null, "No sqlQueryId or queryId found");
+      QueryMetrics queryMetrics = buildQueryMetrics(req.getRemoteAddr(), sqlQueryId, queryId, query);
+      Preconditions.checkNotNull(queryMetrics, "queryMetrics is null");
       queryMetrics.success(success);
       queryMetrics.reportQueryTime(requestTimeNs).emit(emitter);
     }

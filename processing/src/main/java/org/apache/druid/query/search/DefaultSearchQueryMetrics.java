@@ -244,6 +244,12 @@ public class DefaultSearchQueryMetrics implements SearchQueryMetrics
   }
 
   @Override
+  public QueryMetrics reportNodeConnectWaitTime(long timeNs)
+  {
+    return delegateQueryMetrics.reportNodeConnectWaitTime(timeNs);
+  }
+
+  @Override
   public QueryMetrics reportNodeBytes(long byteCount)
   {
     return delegateQueryMetrics.reportNodeBytes(byteCount);

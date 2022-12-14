@@ -284,6 +284,12 @@ public class DefaultQueryMetrics<QueryType extends Query<?>> implements QueryMet
   }
 
   @Override
+  public QueryMetrics<QueryType> reportNodeConnectWaitTime(long timeNs)
+  {
+    return reportMillisTimeMetric("query/node/connect/waitTime", timeNs);
+  }
+
+  @Override
   public QueryMetrics<QueryType> reportNodeBytes(long byteCount)
   {
     return reportMetric("query/node/bytes", byteCount);

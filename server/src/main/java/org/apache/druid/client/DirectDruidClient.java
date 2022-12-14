@@ -453,6 +453,7 @@ public class DirectDruidClient<T> implements QueryRunner<T>
         throw new QueryTimeoutException(StringUtils.nonStrictFormat("Query[%s] url[%s] timed out.", query.getId(), url));
       }
 
+      final long waitStartTime = System.nanoTime();
       future = httpClient.go(
           new Request(
               HttpMethod.POST,
@@ -465,6 +466,8 @@ public class DirectDruidClient<T> implements QueryRunner<T>
           responseHandler,
           Duration.millis(timeLeft)
       );
+      // approx time
+      toolChest.makeMetrics(query).reportNodeConnectWaitTime(System.nanoTime() - waitStartTime).emit(emitter);
 
       queryWatcher.registerQueryFuture(query, future);
 
