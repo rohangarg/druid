@@ -84,12 +84,13 @@ public class StreamAppenderatorDriver extends BaseAppenderatorDriver
   /**
    * Create a driver.
    *
-   * @param appenderator           appenderator
-   * @param segmentAllocator       segment allocator
-   * @param handoffNotifierFactory handoff notifier factory
-   * @param usedSegmentChecker     used segment checker
-   * @param objectMapper           object mapper, used for serde of commit metadata
-   * @param metrics                Firedepartment metrics
+   * @param appenderator                       appenderator
+   * @param segmentAllocator                   segment allocator
+   * @param handoffNotifierFactory             handoff notifier factory
+   * @param usedSegmentChecker                 used segment checker
+   * @param objectMapper                       object mapper, used for serde of commit metadata
+   * @param metrics                            Firedepartment metrics
+   * @param allowNonReplicantTargetsForHandoff allows handoff to be successful
    */
   public StreamAppenderatorDriver(
       Appenderator appenderator,
@@ -98,13 +99,14 @@ public class StreamAppenderatorDriver extends BaseAppenderatorDriver
       UsedSegmentChecker usedSegmentChecker,
       DataSegmentKiller dataSegmentKiller,
       ObjectMapper objectMapper,
-      FireDepartmentMetrics metrics
+      FireDepartmentMetrics metrics,
+      boolean allowNonReplicantTargetsForHandoff
   )
   {
     super(appenderator, segmentAllocator, usedSegmentChecker, dataSegmentKiller);
 
     this.handoffNotifier = Preconditions.checkNotNull(handoffNotifierFactory, "handoffNotifierFactory")
-                                        .createSegmentHandoffNotifier(appenderator.getDataSource());
+                                        .createSegmentHandoffNotifier(appenderator.getDataSource(), allowNonReplicantTargetsForHandoff);
     this.metrics = Preconditions.checkNotNull(metrics, "metrics");
     this.objectMapper = Preconditions.checkNotNull(objectMapper, "objectMapper");
   }

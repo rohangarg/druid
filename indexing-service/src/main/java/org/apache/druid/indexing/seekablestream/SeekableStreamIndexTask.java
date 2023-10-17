@@ -50,7 +50,10 @@ import org.apache.druid.segment.incremental.RowIngestionMeters;
 import org.apache.druid.segment.indexing.DataSchema;
 import org.apache.druid.segment.realtime.FireDepartmentMetrics;
 import org.apache.druid.segment.realtime.appenderator.Appenderator;
+import org.apache.druid.segment.realtime.appenderator.SegmentAllocator;
 import org.apache.druid.segment.realtime.appenderator.StreamAppenderatorDriver;
+import org.apache.druid.segment.realtime.appenderator.update.UpdateSegmentAllocator;
+import org.apache.druid.segment.realtime.appenderator.update.UpdateSpec;
 import org.apache.druid.segment.realtime.firehose.ChatHandler;
 import org.apache.druid.server.security.AuthorizerMapper;
 import org.apache.druid.timeline.partition.NumberedPartialShardSpec;
@@ -205,7 +208,8 @@ public abstract class SeekableStreamIndexTask<PartitionIdType, SequenceOffsetTyp
         toolbox.getCachePopulatorStats(),
         rowIngestionMeters,
         parseExceptionHandler,
-        isUseMaxMemoryEstimates()
+        isUseMaxMemoryEstimates(),
+        toolbox.getStorageConnector()
     );
   }
 
@@ -215,29 +219,44 @@ public abstract class SeekableStreamIndexTask<PartitionIdType, SequenceOffsetTyp
       final FireDepartmentMetrics metrics
   )
   {
+    boolean allowNonReplicantTargetsForHandoff = false;
+    if (tuningConfig.getAppendableIndexSpec() instanceof UpdateSpec) {
+      allowNonReplicantTargetsForHandoff = true;
+    }
+
     return new StreamAppenderatorDriver(
         appenderator,
-        new ActionBasedSegmentAllocator(
-            toolbox.getTaskActionClient(),
-            dataSchema,
-            (schema, row, sequenceName, previousSegmentId, skipSegmentLineageCheck) -> new SegmentAllocateAction(
-                schema.getDataSource(),
-                row.getTimestamp(),
-                schema.getGranularitySpec().getQueryGranularity(),
-                schema.getGranularitySpec().getSegmentGranularity(),
-                sequenceName,
-                previousSegmentId,
-                skipSegmentLineageCheck,
-                NumberedPartialShardSpec.instance(),
-                lockGranularityToUse,
-                lockTypeToUse
-            )
-        ),
+        getSegmentAllocator(toolbox),
         toolbox.getSegmentHandoffNotifierFactory(),
         new ActionBasedUsedSegmentChecker(toolbox.getTaskActionClient()),
         toolbox.getDataSegmentKiller(),
         toolbox.getJsonMapper(),
-        metrics
+        metrics,
+        allowNonReplicantTargetsForHandoff
+    );
+  }
+
+  private SegmentAllocator getSegmentAllocator(TaskToolbox toolbox)
+  {
+    if (tuningConfig.getAppendableIndexSpec() instanceof UpdateSpec) {
+      return new UpdateSegmentAllocator(getDataSource());
+    }
+
+    return new ActionBasedSegmentAllocator(
+        toolbox.getTaskActionClient(),
+        dataSchema,
+        (schema, row, sequenceName, previousSegmentId, skipSegmentLineageCheck) -> new SegmentAllocateAction(
+            schema.getDataSource(),
+            row.getTimestamp(),
+            schema.getGranularitySpec().getQueryGranularity(),
+            schema.getGranularitySpec().getSegmentGranularity(),
+            sequenceName,
+            previousSegmentId,
+            skipSegmentLineageCheck,
+            NumberedPartialShardSpec.instance(),
+            lockGranularityToUse,
+            lockTypeToUse
+        )
     );
   }
 

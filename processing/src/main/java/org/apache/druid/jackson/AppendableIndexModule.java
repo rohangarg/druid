@@ -36,7 +36,7 @@ public class AppendableIndexModule extends SimpleModule
 
   @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type", defaultImpl = OnheapIncrementalIndex.Spec.class)
   @JsonSubTypes(value = {
-      @JsonSubTypes.Type(name = OnheapIncrementalIndex.Spec.TYPE, value = OnheapIncrementalIndex.Spec.class),
+      @JsonSubTypes.Type(name = OnheapIncrementalIndex.Spec.TYPE, value = OnheapIncrementalIndex.Spec.class)
   })
   public interface AppendableIndexSpecMixin
   {

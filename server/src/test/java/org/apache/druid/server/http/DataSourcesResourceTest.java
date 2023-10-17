@@ -644,7 +644,7 @@ public class DataSourcesResourceTest
     EasyMock.replay(databaseRuleManager);
 
     String interval1 = "2013-01-01T01:00:00Z/2013-01-01T02:00:00Z";
-    Response response1 = dataSourcesResource.isHandOffComplete("dataSource1", interval1, 1, "v1");
+    Response response1 = dataSourcesResource.isHandOffComplete("dataSource1", interval1, 1, "v1", false);
     Assert.assertTrue((boolean) response1.getEntity());
 
     EasyMock.verify(databaseRuleManager);
@@ -660,7 +660,7 @@ public class DataSourcesResourceTest
     EasyMock.replay(inventoryView, databaseRuleManager);
 
     String interval2 = "2013-01-02T01:00:00Z/2013-01-02T02:00:00Z";
-    Response response2 = dataSourcesResource.isHandOffComplete("dataSource1", interval2, 1, "v1");
+    Response response2 = dataSourcesResource.isHandOffComplete("dataSource1", interval2, 1, "v1", false);
     Assert.assertFalse((boolean) response2.getEntity());
 
     EasyMock.verify(inventoryView, databaseRuleManager);
@@ -691,7 +691,7 @@ public class DataSourcesResourceTest
             .once();
     EasyMock.replay(inventoryView, databaseRuleManager);
 
-    Response response3 = dataSourcesResource.isHandOffComplete("dataSource1", interval3, 1, "v1");
+    Response response3 = dataSourcesResource.isHandOffComplete("dataSource1", interval3, 1, "v1", false);
     Assert.assertTrue((boolean) response3.getEntity());
 
     EasyMock.verify(inventoryView, databaseRuleManager);
@@ -897,7 +897,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createHistoricalServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(interval, "v2", 2)
+            new SegmentDescriptor(interval, "v2", 2),
+            false
         )
     );
 
@@ -909,7 +910,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createHistoricalServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(interval, "v1", 2)
+            new SegmentDescriptor(interval, "v1", 2),
+            false
         )
     );
 
@@ -921,7 +923,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createHistoricalServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(interval, "v1", 2)
+            new SegmentDescriptor(interval, "v1", 2),
+            false
         )
     );
 
@@ -939,7 +942,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createHistoricalServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(interval, "v1", 2)
+            new SegmentDescriptor(interval, "v1", 2),
+            false
         )
     );
 
@@ -951,7 +955,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createRealtimeServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(interval, "v1", 2)
+            new SegmentDescriptor(interval, "v1", 2),
+            false
         )
     );
   }
@@ -968,7 +973,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createHistoricalServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(interval, "v1", 1)
+            new SegmentDescriptor(interval, "v1", 1),
+            false
         )
     );
 
@@ -980,7 +986,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createHistoricalServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(interval, "v1", 2)
+            new SegmentDescriptor(interval, "v1", 2),
+            false
         )
     );
 
@@ -998,7 +1005,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createHistoricalServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(Intervals.of("2011-04-01/2011-04-03"), "v1", 1)
+            new SegmentDescriptor(Intervals.of("2011-04-01/2011-04-03"), "v1", 1),
+            false
         )
     );
 
@@ -1010,7 +1018,8 @@ public class DataSourcesResourceTest
                     Sets.newHashSet(createHistoricalServerMetadata("a"))
                 )
             ),
-            new SegmentDescriptor(Intervals.of("2011-04-02/2011-04-03"), "v1", 1)
+            new SegmentDescriptor(Intervals.of("2011-04-02/2011-04-03"), "v1", 1),
+            false
         )
     );
   }

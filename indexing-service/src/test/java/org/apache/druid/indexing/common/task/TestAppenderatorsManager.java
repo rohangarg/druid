@@ -42,6 +42,7 @@ import org.apache.druid.segment.realtime.appenderator.AppenderatorConfig;
 import org.apache.druid.segment.realtime.appenderator.Appenderators;
 import org.apache.druid.segment.realtime.appenderator.AppenderatorsManager;
 import org.apache.druid.server.coordination.DataSegmentAnnouncer;
+import org.apache.druid.storage.StorageConnector;
 import org.joda.time.Interval;
 
 public class TestAppenderatorsManager implements AppenderatorsManager
@@ -68,7 +69,8 @@ public class TestAppenderatorsManager implements AppenderatorsManager
       CachePopulatorStats cachePopulatorStats,
       RowIngestionMeters rowIngestionMeters,
       ParseExceptionHandler parseExceptionHandler,
-      boolean useMaxMemoryEstimates
+      boolean useMaxMemoryEstimates,
+      StorageConnector storageConnector
   )
   {
     realtimeAppenderator = Appenderators.createRealtime(
@@ -90,7 +92,8 @@ public class TestAppenderatorsManager implements AppenderatorsManager
         cachePopulatorStats,
         rowIngestionMeters,
         parseExceptionHandler,
-        useMaxMemoryEstimates
+        useMaxMemoryEstimates,
+        null
     );
     return realtimeAppenderator;
   }

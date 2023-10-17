@@ -1016,7 +1016,8 @@ public class RealtimeIndexTaskTest extends InitializedNullHandlingTest
         null,
         null,
         null,
-        "1"
+        "1",
+        null
     );
 
     return toolboxFactory.build(task);

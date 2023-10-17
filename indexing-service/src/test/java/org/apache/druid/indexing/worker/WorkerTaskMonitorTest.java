@@ -207,7 +207,8 @@ public class WorkerTaskMonitorTest
                 null,
                 null,
                 null,
-                "1"
+                "1",
+                null
             ),
             taskConfig,
             new NoopServiceEmitter(),

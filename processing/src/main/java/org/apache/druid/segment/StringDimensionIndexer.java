@@ -267,6 +267,7 @@ public class StringDimensionIndexer extends DictionaryEncodedColumnIndexer<int[]
     if (isSparse || dimLookup.getIdForNull() != DimensionDictionary.ABSENT_VALUE_ID) {
       capabilites.setHasNulls(true);
     }
+
     return capabilites;
   }
 

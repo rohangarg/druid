@@ -88,6 +88,7 @@ import org.apache.druid.segment.realtime.appenderator.AppenderatorDriverAddResul
 import org.apache.druid.segment.realtime.appenderator.SegmentsAndCommitMetadata;
 import org.apache.druid.segment.realtime.appenderator.StreamAppenderator;
 import org.apache.druid.segment.realtime.appenderator.StreamAppenderatorDriver;
+import org.apache.druid.segment.realtime.appenderator.update.UpdateSpec;
 import org.apache.druid.segment.realtime.firehose.ChatHandler;
 import org.apache.druid.server.security.Access;
 import org.apache.druid.server.security.Action;
@@ -970,9 +971,10 @@ public abstract class SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOff
   {
     log.debug("Publishing segments for sequence [%s].", sequenceMetadata);
 
+    boolean skipSegmentPublish = tuningConfig.getAppendableIndexSpec() instanceof UpdateSpec;
     final ListenableFuture<SegmentsAndCommitMetadata> publishFuture = Futures.transform(
         driver.publish(
-            sequenceMetadata.createPublisher(this, toolbox, ioConfig.isUseTransaction()),
+            sequenceMetadata.createPublisher(this, toolbox, ioConfig.isUseTransaction(), skipSegmentPublish),
             sequenceMetadata.getCommitterSupplier(this, stream, lastPersistedOffsets).get(),
             Collections.singletonList(sequenceMetadata.getSequenceName())
         ),

@@ -19,6 +19,7 @@
 
 package org.apache.druid.storage.local;
 
+import com.google.inject.Inject;
 import org.apache.commons.io.input.BoundedInputStream;
 import org.apache.druid.java.util.common.FileUtils;
 import org.apache.druid.java.util.common.IAE;
@@ -48,6 +49,12 @@ public class LocalFileStorageConnector implements StorageConnector
   private static final Logger log = new Logger(LocalFileStorageConnector.class);
 
   private final File basePath;
+
+  @Inject
+  public LocalFileStorageConnector(LocalFileStorageConnectorConfig connectorConfig) throws IOException
+  {
+    this(connectorConfig.getBasePath());
+  }
 
   public LocalFileStorageConnector(File basePath) throws IOException
   {

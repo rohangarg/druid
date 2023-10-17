@@ -22,7 +22,13 @@ package org.apache.druid.storage.azure.output;
 import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.inject.Binder;
+import com.google.inject.Key;
+import com.google.inject.multibindings.MapBinder;
+import org.apache.druid.guice.JsonConfigProvider;
+import org.apache.druid.guice.PolyBind;
 import org.apache.druid.initialization.DruidModule;
+import org.apache.druid.storage.StorageConnector;
+import org.apache.druid.storage.azure.AzureStorageDruidModule;
 
 import java.util.Collections;
 import java.util.List;
@@ -41,6 +47,13 @@ public class AzureStorageConnectorModule implements DruidModule
   @Override
   public void configure(Binder binder)
   {
-
+    MapBinder<String, StorageConnector> mapBinder =
+        PolyBind.optionBinder(binder, Key.get(StorageConnector.class));
+    mapBinder.addBinding(AzureStorageDruidModule.SCHEME).toProvider(AzureStorageConnectorProvider.class);
+    JsonConfigProvider.bind(
+        binder,
+        "druid.storage",
+        AzureStorageConnectorProvider.class
+    );
   }
 }

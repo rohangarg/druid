@@ -242,7 +242,7 @@ public class LoadedSegmentDataProvider
   {
     Boolean wasHandedOff;
     try {
-      wasHandedOff = FutureUtils.get(coordinatorClient.isHandoffComplete(dataSource, segmentDescriptor), true);
+      wasHandedOff = FutureUtils.get(coordinatorClient.isHandoffComplete(dataSource, segmentDescriptor, false), true);
     }
     catch (Exception e) {
       throw new IOE(e, "Could not contact coordinator for segment[%s]", segmentDescriptor);

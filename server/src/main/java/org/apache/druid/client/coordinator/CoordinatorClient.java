@@ -33,7 +33,11 @@ public interface CoordinatorClient
   /**
    * Checks if the given segment is handed off or not.
    */
-  ListenableFuture<Boolean> isHandoffComplete(String dataSource, SegmentDescriptor descriptor);
+  ListenableFuture<Boolean> isHandoffComplete(
+      String dataSource,
+      SegmentDescriptor descriptor,
+      boolean allowNonReplicantTargetsForHandoff
+  );
 
   /**
    * Fetches segment metadata for the given dataSource and segmentId. If includeUnused is set to false, the segment is

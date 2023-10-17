@@ -793,7 +793,8 @@ public class AppenderatorDriverRealtimeIndexTask extends AbstractTask implements
         toolbox.getCachePopulatorStats(),
         rowIngestionMeters,
         parseExceptionHandler,
-        isUseMaxMemoryEstimates()
+        isUseMaxMemoryEstimates(),
+        null
     );
   }
 
@@ -827,7 +828,8 @@ public class AppenderatorDriverRealtimeIndexTask extends AbstractTask implements
         new ActionBasedUsedSegmentChecker(toolbox.getTaskActionClient()),
         toolbox.getDataSegmentKiller(),
         toolbox.getJsonMapper(),
-        metrics
+        metrics,
+        false
     );
   }
 

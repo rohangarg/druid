@@ -44,7 +44,22 @@ public class CoordinatorBasedSegmentHandoffNotifierFactory implements SegmentHan
     return new CoordinatorBasedSegmentHandoffNotifier(
         dataSource,
         client,
-        config
+        config,
+        false
+    );
+  }
+
+  @Override
+  public SegmentHandoffNotifier createSegmentHandoffNotifier(
+      String dataSource,
+      boolean allowNonReplicantTargetsForHandoff
+  )
+  {
+    return new CoordinatorBasedSegmentHandoffNotifier(
+        dataSource,
+        client,
+        config,
+        allowNonReplicantTargetsForHandoff
     );
   }
 }

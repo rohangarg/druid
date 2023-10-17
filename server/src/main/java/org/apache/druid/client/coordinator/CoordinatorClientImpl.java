@@ -53,14 +53,19 @@ public class CoordinatorClientImpl implements CoordinatorClient
   }
 
   @Override
-  public ListenableFuture<Boolean> isHandoffComplete(String dataSource, SegmentDescriptor descriptor)
+  public ListenableFuture<Boolean> isHandoffComplete(
+      String dataSource,
+      SegmentDescriptor descriptor,
+      boolean allowNonReplicantTargetsForHandoff
+  )
   {
     final String path = StringUtils.format(
-        "/druid/coordinator/v1/datasources/%s/handoffComplete?interval=%s&partitionNumber=%d&version=%s",
+        "/druid/coordinator/v1/datasources/%s/handoffComplete?interval=%s&partitionNumber=%d&version=%s&allowNonReplicantTargetsForHandoff=%b",
         StringUtils.urlEncode(dataSource),
         StringUtils.urlEncode(descriptor.getInterval().toString()),
         descriptor.getPartitionNumber(),
-        StringUtils.urlEncode(descriptor.getVersion())
+        StringUtils.urlEncode(descriptor.getVersion()),
+        allowNonReplicantTargetsForHandoff
     );
 
     return FutureUtils.transform(

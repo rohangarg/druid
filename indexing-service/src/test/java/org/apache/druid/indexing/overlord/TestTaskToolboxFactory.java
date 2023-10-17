@@ -114,7 +114,8 @@ public class TestTaskToolboxFactory extends TaskToolboxFactory
         bob.supervisorTaskClientProvider,
         bob.shuffleClient,
         bob.taskLogPusher,
-        bob.attemptId
+        bob.attemptId,
+        null
     );
   }
 

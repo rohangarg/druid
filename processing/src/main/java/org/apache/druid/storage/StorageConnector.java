@@ -137,7 +137,7 @@ public interface StorageConnector
    * the dirName and the file name form the full path that can be used as the arguments for other methods of the storage
    * connector.
    * For example, for a S3 path such as s3://bucket/parent1/parent2/child, the filename returned for the input path
-   * "parent1/parent2" should be "child" and for input "parent1" should be "parent2/child"
+   * "parent1/parent2" should be "child" and for input "parent1" could be "parent2/child" OR "parent2".
    */
   Iterator<String> listDir(String dirName) throws IOException;
 }

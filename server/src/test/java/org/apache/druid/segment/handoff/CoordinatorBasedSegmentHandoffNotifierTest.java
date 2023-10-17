@@ -51,14 +51,15 @@ public class CoordinatorBasedSegmentHandoffNotifierTest
     SegmentDescriptor descriptor = new SegmentDescriptor(interval, "v1", 2);
 
     CoordinatorClient coordinatorClient = EasyMock.createMock(CoordinatorClient.class);
-    EasyMock.expect(coordinatorClient.isHandoffComplete("test_ds", descriptor))
+    EasyMock.expect(coordinatorClient.isHandoffComplete("test_ds", descriptor, false))
             .andReturn(Futures.immediateFuture(false))
             .anyTimes();
     EasyMock.replay(coordinatorClient);
     CoordinatorBasedSegmentHandoffNotifier notifier = new CoordinatorBasedSegmentHandoffNotifier(
         "test_ds",
         coordinatorClient,
-        notifierConfig
+        notifierConfig,
+        false
     );
     final AtomicBoolean callbackCalled = new AtomicBoolean(false);
     notifier.registerSegmentHandoffCallback(
@@ -82,14 +83,15 @@ public class CoordinatorBasedSegmentHandoffNotifierTest
 
     final AtomicBoolean callbackCalled = new AtomicBoolean(false);
     CoordinatorClient coordinatorClient = EasyMock.createMock(CoordinatorClient.class);
-    EasyMock.expect(coordinatorClient.isHandoffComplete("test_ds", descriptor))
+    EasyMock.expect(coordinatorClient.isHandoffComplete("test_ds", descriptor, false))
             .andReturn(Futures.immediateFuture(true))
             .anyTimes();
     EasyMock.replay(coordinatorClient);
     CoordinatorBasedSegmentHandoffNotifier notifier = new CoordinatorBasedSegmentHandoffNotifier(
         "test_ds",
         coordinatorClient,
-        notifierConfig
+        notifierConfig,
+        false
     );
 
     notifier.registerSegmentHandoffCallback(

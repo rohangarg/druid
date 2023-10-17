@@ -75,8 +75,12 @@ public class SequenceMetadataTest
         ImmutableSet.of(),
         null
     );
-    TransactionalSegmentPublisher transactionalSegmentPublisher
-        = sequenceMetadata.createPublisher(mockSeekableStreamIndexTaskRunner, mockTaskToolbox, true);
+    TransactionalSegmentPublisher transactionalSegmentPublisher = sequenceMetadata.createPublisher(
+        mockSeekableStreamIndexTaskRunner,
+        mockTaskToolbox,
+        true,
+        false
+    );
 
     ISE exception = Assert.assertThrows(
         ISE.class,
@@ -113,7 +117,9 @@ public class SequenceMetadataTest
         ImmutableSet.of(),
         null
     );
-    TransactionalSegmentPublisher transactionalSegmentPublisher = sequenceMetadata.createPublisher(mockSeekableStreamIndexTaskRunner, mockTaskToolbox, false);
+    TransactionalSegmentPublisher transactionalSegmentPublisher = sequenceMetadata.createPublisher(mockSeekableStreamIndexTaskRunner, mockTaskToolbox, false,
+                                                                                                   false
+    );
 
     transactionalSegmentPublisher.publishAnnotatedSegments(null, notNullNotEmptySegment, ImmutableMap.of());
   }

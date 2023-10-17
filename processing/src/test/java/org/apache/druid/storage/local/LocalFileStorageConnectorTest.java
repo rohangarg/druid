@@ -27,36 +27,51 @@ import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.storage.StorageConnector;
 import org.apache.druid.storage.StorageConnectorProvider;
 import org.junit.Assert;
-import org.junit.Before;
+import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+@RunWith(Parameterized.class)
 public class LocalFileStorageConnectorTest
 {
-  @Rule
-  public TemporaryFolder temporaryFolder = new TemporaryFolder();
+  @ClassRule(order = 1)
+  public static TemporaryFolder temporaryFolder = new TemporaryFolder();
 
   @Rule
   public ExpectedException expectedException = ExpectedException.none();
-  private File tempDir;
-  private StorageConnector storageConnector;
+  private final File tempDir;
+  private final StorageConnector storageConnector;
 
-  @Before
-  public void init() throws IOException
+  @Parameterized.Parameters
+  public static Collection<Object[]> constructorFeeder() throws IOException
   {
-    tempDir = temporaryFolder.newFolder();
-    storageConnector = new LocalFileStorageConnectorProvider(tempDir).get();
+    temporaryFolder.create(); // TODO : think if there's any way to initialize temp folder before this static method
+    File tempDir = temporaryFolder.newFolder();
+    return Arrays.asList(
+        new Object[]{new LocalFileStorageConnectorProvider(tempDir).get(), tempDir},
+        new Object[]{new LocalFileStorageConnector(new LocalFileStorageConnectorConfig(tempDir)), tempDir}
+    );
+  }
+
+  public LocalFileStorageConnectorTest(LocalFileStorageConnector localFileStorageConnector, File tempDir)
+  {
+    this.storageConnector = localFileStorageConnector;
+    this.tempDir = tempDir;
   }
 
   @Test

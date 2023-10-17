@@ -17,13 +17,26 @@
  * under the License.
  */
 
-package org.apache.druid.storage;
+package org.apache.druid.storage.local;
 
-import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.google.inject.Provider;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
-@Deprecated
-public interface StorageConnectorProvider extends Provider<StorageConnector>
+import java.io.File;
+
+public class LocalFileStorageConnectorConfig
 {
+  @JsonProperty
+  private final File basePath;
+
+  @JsonCreator
+  public LocalFileStorageConnectorConfig(@JsonProperty(value = "basePath") File basePath)
+  {
+    this.basePath = basePath;
+  }
+
+  public File getBasePath()
+  {
+    return basePath;
+  }
 }

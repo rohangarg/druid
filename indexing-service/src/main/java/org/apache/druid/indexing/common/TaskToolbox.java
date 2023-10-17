@@ -62,6 +62,7 @@ import org.apache.druid.server.DruidNode;
 import org.apache.druid.server.coordination.DataSegmentAnnouncer;
 import org.apache.druid.server.coordination.DataSegmentServerAnnouncer;
 import org.apache.druid.server.security.AuthorizerMapper;
+import org.apache.druid.storage.StorageConnector;
 import org.apache.druid.tasklogs.TaskLogPusher;
 import org.apache.druid.timeline.DataSegment;
 import org.apache.druid.utils.JvmUtils;
@@ -128,6 +129,7 @@ public class TaskToolbox
 
   private final TaskLogPusher taskLogPusher;
   private final String attemptId;
+  private final StorageConnector storageConnector;
 
   public TaskToolbox(
       TaskConfig config,
@@ -168,7 +170,8 @@ public class TaskToolbox
       ParallelIndexSupervisorTaskClientProvider supervisorTaskClientProvider,
       ShuffleClient shuffleClient,
       TaskLogPusher taskLogPusher,
-      String attemptId
+      String attemptId,
+      StorageConnector storageConnector
   )
   {
     this.config = config;
@@ -211,6 +214,7 @@ public class TaskToolbox
     this.shuffleClient = shuffleClient;
     this.taskLogPusher = taskLogPusher;
     this.attemptId = attemptId;
+    this.storageConnector = storageConnector;
   }
 
   public TaskConfig getConfig()
@@ -468,6 +472,11 @@ public class TaskToolbox
     return attemptId;
   }
 
+  public StorageConnector getStorageConnector()
+  {
+    return storageConnector;
+  }
+
   /**
    * Get {@link RuntimeInfo} adjusted for this particular task. When running in a task JVM launched by a MiddleManager,
    * this is the same as the baseline {@link RuntimeInfo}. When running in an Indexer, it is adjusted based on
@@ -543,6 +552,7 @@ public class TaskToolbox
     private ShuffleClient shuffleClient;
     private TaskLogPusher taskLogPusher;
     private String attemptId;
+    private StorageConnector storageConnector;
 
     public Builder()
     {
@@ -587,6 +597,7 @@ public class TaskToolbox
       this.intermediaryDataManager = other.intermediaryDataManager;
       this.supervisorTaskClientProvider = other.supervisorTaskClientProvider;
       this.shuffleClient = other.shuffleClient;
+      this.storageConnector = other.storageConnector;
     }
 
     public Builder config(final TaskConfig config)
@@ -823,6 +834,12 @@ public class TaskToolbox
       return this;
     }
 
+    public Builder storageConnector(final StorageConnector storageConnector)
+    {
+      this.storageConnector = storageConnector;
+      return this;
+    }
+
     public TaskToolbox build()
     {
       return new TaskToolbox(
@@ -864,7 +881,8 @@ public class TaskToolbox
           supervisorTaskClientProvider,
           shuffleClient,
           taskLogPusher,
-          attemptId
+          attemptId,
+          storageConnector
       );
     }
   }

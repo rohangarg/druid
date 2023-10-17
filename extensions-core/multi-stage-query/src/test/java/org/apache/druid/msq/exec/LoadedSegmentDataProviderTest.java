@@ -169,7 +169,7 @@ public class LoadedSegmentDataProviderTest
       responseContext.addMissingSegments(ImmutableList.of(SEGMENT_1));
       return Sequences.empty();
     }).when(dataServerClient).run(any(), any(), any(), any());
-    doReturn(Futures.immediateFuture(Boolean.TRUE)).when(coordinatorClient).isHandoffComplete(DATASOURCE1, SEGMENT_1);
+    doReturn(Futures.immediateFuture(Boolean.TRUE)).when(coordinatorClient).isHandoffComplete(DATASOURCE1, SEGMENT_1, false);
 
     Pair<LoadedSegmentDataProvider.DataServerQueryStatus, Yielder<Object[]>> dataServerQueryStatusYielderPair = target.fetchRowsFromDataServer(
         query,
@@ -189,7 +189,7 @@ public class LoadedSegmentDataProviderTest
         new QueryInterruptedException(new RpcException("Could not connect to server"))
     ).when(dataServerClient).run(any(), any(), any(), any());
 
-    doReturn(Futures.immediateFuture(Boolean.FALSE)).when(coordinatorClient).isHandoffComplete(DATASOURCE1, SEGMENT_1);
+    doReturn(Futures.immediateFuture(Boolean.FALSE)).when(coordinatorClient).isHandoffComplete(DATASOURCE1, SEGMENT_1, false);
 
     ScanQuery queryWithRetry = query.withOverriddenContext(ImmutableMap.of(QueryContexts.NUM_RETRIES_ON_MISSING_SEGMENTS_KEY, 3));
 
@@ -212,7 +212,7 @@ public class LoadedSegmentDataProviderTest
         new QueryInterruptedException(new RpcException("Could not connect to server"))
     ).when(dataServerClient).run(any(), any(), any(), any());
 
-    doReturn(Futures.immediateFuture(Boolean.TRUE)).when(coordinatorClient).isHandoffComplete(DATASOURCE1, SEGMENT_1);
+    doReturn(Futures.immediateFuture(Boolean.TRUE)).when(coordinatorClient).isHandoffComplete(DATASOURCE1, SEGMENT_1, false);
 
     Pair<LoadedSegmentDataProvider.DataServerQueryStatus, Yielder<Object[]>> dataServerQueryStatusYielderPair = target.fetchRowsFromDataServer(
         query,
@@ -233,7 +233,7 @@ public class LoadedSegmentDataProviderTest
       responseContext.addMissingSegments(ImmutableList.of(SEGMENT_1));
       return Sequences.empty();
     }).when(dataServerClient).run(any(), any(), any(), any());
-    doReturn(Futures.immediateFuture(Boolean.FALSE)).when(coordinatorClient).isHandoffComplete(DATASOURCE1, SEGMENT_1);
+    doReturn(Futures.immediateFuture(Boolean.FALSE)).when(coordinatorClient).isHandoffComplete(DATASOURCE1, SEGMENT_1, false);
 
     Assert.assertThrows(IOE.class, () ->
         target.fetchRowsFromDataServer(

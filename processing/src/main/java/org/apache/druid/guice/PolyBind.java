@@ -32,6 +32,7 @@ import com.google.inject.multibindings.MapBinder;
 import com.google.inject.util.Types;
 import org.apache.druid.guice.annotations.PublicApi;
 import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.logger.Logger;
 
 import javax.annotation.Nullable;
 import java.lang.annotation.Annotation;
@@ -68,7 +69,36 @@ public class PolyBind
       @Nullable Key<? extends T> defaultKey
   )
   {
-    ConfiggedProvider<T> provider = new ConfiggedProvider<>(interfaceKey, property, defaultKey, null);
+    ConfiggedProvider<T> provider = new ConfiggedProvider<>(interfaceKey, property, defaultKey, null, false);
+    return binder.bind(interfaceKey).toProvider(provider);
+  }
+
+  /**
+   * Sets up a "choice" for the injector to resolve at injection time. Also, allows to fall back to the default key incase
+   * a provider implementation is not bounded for the property.
+   *
+   * @param binder the binder for the injector that is being configured
+   * @param property the property that will be checked to determine the implementation choice
+   * @param interfaceKey the interface that will be injected using this choice
+   * @param defaultKey the default instance to be injected if the property doesn't match a choice
+   * @param <T> interface type
+   * @return A ScopedBindingBuilder so that scopes can be added to the binding, if required.
+   */
+  public static <T> ScopedBindingBuilder createChoiceWithFallback(
+      Binder binder,
+      String property,
+      Key<T> interfaceKey,
+      Key<? extends T> defaultKey
+  )
+  {
+    Preconditions.checkNotNull(defaultKey, "default key is null");
+    ConfiggedProvider<T> provider = new ConfiggedProvider<>(
+        interfaceKey,
+        property,
+        defaultKey,
+        null,
+        true
+    );
     return binder.bind(interfaceKey).toProvider(provider);
   }
 
@@ -106,7 +136,7 @@ public class PolyBind
   )
   {
     Preconditions.checkNotNull(defaultPropertyValue);
-    ConfiggedProvider<T> provider = new ConfiggedProvider<>(interfaceKey, property, null, defaultPropertyValue);
+    ConfiggedProvider<T> provider = new ConfiggedProvider<>(interfaceKey, property, null, defaultPropertyValue, false);
     return binder.bind(interfaceKey).toProvider(provider);
   }
 
@@ -135,12 +165,14 @@ public class PolyBind
 
   static class ConfiggedProvider<T> implements Provider<T>
   {
+    private static final Logger LOGGER = new Logger(ConfiggedProvider.class);
     private final Key<T> key;
     private final String property;
     @Nullable
     private final Key<? extends T> defaultKey;
     @Nullable
     private final String defaultPropertyValue;
+    private final boolean fallbackToDefaultKey;
 
     private Injector injector;
     private Properties props;
@@ -149,13 +181,15 @@ public class PolyBind
         Key<T> key,
         String property,
         @Nullable Key<? extends T> defaultKey,
-        @Nullable String defaultPropertyValue
+        @Nullable String defaultPropertyValue,
+        boolean fallbackToDefaultKey
     )
     {
       this.key = key;
       this.property = property;
       this.defaultKey = defaultKey;
       this.defaultPropertyValue = defaultPropertyValue;
+      this.fallbackToDefaultKey = fallbackToDefaultKey;
     }
 
     @Inject
@@ -195,6 +229,15 @@ public class PolyBind
       final Provider<T> provider = implsMap.get(implName);
 
       if (provider == null) {
+        if (fallbackToDefaultKey && defaultKey != null) {
+          LOGGER.info(
+              "No implementation for interface [%s] found through [%s] property. Defaulting to type [%s]",
+              key.getTypeLiteral().getType(),
+              property,
+              defaultKey.getTypeLiteral().getType()
+          );
+          return injector.getInstance(defaultKey);
+        }
         throw new ProvisionException(
             StringUtils.format("Unknown provider [%s] of %s, known options [%s]", implName, key, implsMap.keySet())
         );

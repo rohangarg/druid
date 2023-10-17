@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.inject.Binder;
 import org.apache.druid.initialization.DruidModule;
+import org.apache.druid.segment.realtime.appenderator.update.UpdateSpec;
 import org.apache.druid.segment.realtime.firehose.ClippedFirehoseFactory;
 import org.apache.druid.segment.realtime.firehose.EventReceiverFirehoseFactory;
 import org.apache.druid.segment.realtime.firehose.FixedCountFirehoseFactory;
@@ -48,7 +49,8 @@ public class FirehoseModule implements DruidModule
                 new NamedType(ClippedFirehoseFactory.class, "clipped"),
                 new NamedType(TimedShutoffFirehoseFactory.class, "timed"),
                 new NamedType(EventReceiverFirehoseFactory.class, "receiver"),
-                new NamedType(FixedCountFirehoseFactory.class, "fixedCount")
+                new NamedType(FixedCountFirehoseFactory.class, "fixedCount"),
+                new NamedType(UpdateSpec.class, UpdateSpec.TYPE)
             )
     );
   }

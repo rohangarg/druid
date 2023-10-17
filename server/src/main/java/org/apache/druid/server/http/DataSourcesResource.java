@@ -863,7 +863,8 @@ public class DataSourcesResource
       @PathParam("dataSourceName") String dataSourceName,
       @QueryParam("interval") final String interval,
       @QueryParam("partitionNumber") final int partitionNumber,
-      @QueryParam("version") final String version
+      @QueryParam("version") final String version,
+      @QueryParam("allowNonReplicantTargetsForHandoff") @Nullable final Boolean allowNonReplicantTargetsForHandoff
   )
   {
     try {
@@ -904,7 +905,11 @@ public class DataSourcesResource
 
       Iterable<ImmutableSegmentLoadInfo> servedSegmentsInInterval =
           prepareServedSegmentsInInterval(timeline, theInterval);
-      if (isSegmentLoaded(servedSegmentsInInterval, descriptor)) {
+      if (isSegmentLoaded(
+          servedSegmentsInInterval,
+          descriptor,
+          allowNonReplicantTargetsForHandoff != null && allowNonReplicantTargetsForHandoff
+      )) {
         return Response.ok(true).build();
       }
 
@@ -916,15 +921,34 @@ public class DataSourcesResource
     }
   }
 
-  static boolean isSegmentLoaded(Iterable<ImmutableSegmentLoadInfo> servedSegments, SegmentDescriptor descriptor)
+  static boolean isSegmentLoaded(
+      Iterable<ImmutableSegmentLoadInfo> servedSegments,
+      SegmentDescriptor descriptor,
+      boolean allowNonReplicantTargetsForHandoff
+  )
   {
+    log.info("allowNonReplicantTargetsForHandoff : " + allowNonReplicantTargetsForHandoff);
     for (ImmutableSegmentLoadInfo segmentLoadInfo : servedSegments) {
+      boolean versionCheck =
+          allowNonReplicantTargetsForHandoff ?
+          segmentLoadInfo.getSegment().getVersion().compareTo(descriptor.getVersion()) > 0 :
+          segmentLoadInfo.getSegment().getVersion().compareTo(descriptor.getVersion()) >= 0;
+      log.info("candidate handoff segment : " + segmentLoadInfo.getSegment());
+      log.info(
+          "hand off check : interval check - [%s], partition number check - [%s], versionCheck - [%s], replicantTarget check - [%s]",
+          segmentLoadInfo.getSegment().getInterval().contains(descriptor.getInterval()),
+          segmentLoadInfo.getSegment().getShardSpec().getPartitionNum() == descriptor.getPartitionNumber(),
+          versionCheck,
+          (allowNonReplicantTargetsForHandoff || Iterables.any(
+              segmentLoadInfo.getServers(), DruidServerMetadata::isSegmentReplicationTarget))
+      );
       if (segmentLoadInfo.getSegment().getInterval().contains(descriptor.getInterval())
           && segmentLoadInfo.getSegment().getShardSpec().getPartitionNum() == descriptor.getPartitionNumber()
-          && segmentLoadInfo.getSegment().getVersion().compareTo(descriptor.getVersion()) >= 0
-          && Iterables.any(
-          segmentLoadInfo.getServers(), DruidServerMetadata::isSegmentReplicationTarget
-      )) {
+          && versionCheck
+          && (allowNonReplicantTargetsForHandoff || Iterables.any(
+              segmentLoadInfo.getServers(), DruidServerMetadata::isSegmentReplicationTarget
+          ))
+      ) {
         return true;
       }
     }

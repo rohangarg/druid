@@ -152,7 +152,8 @@ public class TaskToolboxTest
         null,
         null,
         null,
-        "1"
+        "1",
+        null
     );
   }
 

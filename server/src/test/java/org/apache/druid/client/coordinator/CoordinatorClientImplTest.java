@@ -93,7 +93,8 @@ public class CoordinatorClientImplTest
         true,
         coordinatorClient.isHandoffComplete(
             "xyz",
-            new SegmentDescriptor(Intervals.of("2000/3000"), "1", 2)
+            new SegmentDescriptor(Intervals.of("2000/3000"), "1", 2),
+            false
         ).get()
     );
   }

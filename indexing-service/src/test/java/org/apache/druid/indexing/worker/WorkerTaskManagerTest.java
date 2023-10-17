@@ -165,7 +165,8 @@ public class WorkerTaskManagerTest
                 null,
                 null,
                 null,
-                "1"
+                "1",
+                null
             ),
             taskConfig,
             location

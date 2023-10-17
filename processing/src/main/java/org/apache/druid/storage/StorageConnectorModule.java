@@ -23,9 +23,19 @@ import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.common.collect.ImmutableList;
 import com.google.inject.Binder;
+import com.google.inject.Key;
+import com.google.inject.multibindings.MapBinder;
+import org.apache.druid.guice.JsonConfigProvider;
+import org.apache.druid.guice.PolyBind;
 import org.apache.druid.initialization.DruidModule;
+import org.apache.druid.storage.local.LocalFileStorageConnector;
+import org.apache.druid.storage.local.LocalFileStorageConnectorConfig;
 import org.apache.druid.storage.local.LocalFileStorageConnectorProvider;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Iterator;
 import java.util.List;
 
 public class StorageConnectorModule implements DruidModule
@@ -42,6 +52,72 @@ public class StorageConnectorModule implements DruidModule
   @Override
   public void configure(Binder binder)
   {
+    PolyBind.createChoiceWithFallback(
+        binder,
+        "druid.storage.type",
+        Key.get(StorageConnector.class),
+        Key.get(NoopStorageConnector.class)
+    );
+    MapBinder<String, StorageConnector> mapBinder =
+        PolyBind.optionBinder(binder, Key.get(StorageConnector.class));
+    mapBinder.addBinding("local").to(LocalFileStorageConnector.class);
+    JsonConfigProvider.bind(
+        binder,
+        "druid.storage",
+        LocalFileStorageConnectorConfig.class
+    );
+  }
 
+  private static class NoopStorageConnector implements StorageConnector
+  {
+    private static final String ERROR_MSG = "Please provide a storage connector config.";
+
+    @Override
+    public boolean pathExists(String path) throws IOException
+    {
+      throw new UnsupportedOperationException(ERROR_MSG);
+    }
+
+    @Override
+    public InputStream read(String path) throws IOException
+    {
+      throw new UnsupportedOperationException(ERROR_MSG);
+    }
+
+    @Override
+    public InputStream readRange(String path, long from, long size) throws IOException
+    {
+      throw new UnsupportedOperationException(ERROR_MSG);
+    }
+
+    @Override
+    public OutputStream write(String path) throws IOException
+    {
+      throw new UnsupportedOperationException(ERROR_MSG);
+    }
+
+    @Override
+    public void deleteFile(String path) throws IOException
+    {
+      throw new UnsupportedOperationException(ERROR_MSG);
+    }
+
+    @Override
+    public void deleteFiles(Iterable<String> paths) throws IOException
+    {
+      throw new UnsupportedOperationException(ERROR_MSG);
+    }
+
+    @Override
+    public void deleteRecursively(String path) throws IOException
+    {
+      throw new UnsupportedOperationException(ERROR_MSG);
+    }
+
+    @Override
+    public Iterator<String> listDir(String dirName) throws IOException
+    {
+      throw new UnsupportedOperationException(ERROR_MSG);
+    }
   }
 }

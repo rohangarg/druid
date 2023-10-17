@@ -134,7 +134,8 @@ public class SingleTaskBackgroundRunnerTest
         null,
         null,
         null,
-        "1"
+        "1",
+        null
     );
     runner = new SingleTaskBackgroundRunner(
         toolboxFactory,

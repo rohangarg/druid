@@ -319,13 +319,15 @@ public class SequenceMetadata<PartitionIdType, SequenceOffsetType>
   TransactionalSegmentPublisher createPublisher(
       SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOffsetType, ?> runner,
       TaskToolbox toolbox,
-      boolean useTransaction
+      boolean useTransaction,
+      boolean skipSegmentPublish
   )
   {
     return new SequenceMetadataTransactionalSegmentPublisher(
         runner,
         toolbox,
-        useTransaction
+        useTransaction,
+        skipSegmentPublish
     );
   }
 
@@ -335,16 +337,19 @@ public class SequenceMetadata<PartitionIdType, SequenceOffsetType>
     private final SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOffsetType, ?> runner;
     private final TaskToolbox toolbox;
     private final boolean useTransaction;
+    private final boolean skipSegmentPublish;
 
     public SequenceMetadataTransactionalSegmentPublisher(
         SeekableStreamIndexTaskRunner<PartitionIdType, SequenceOffsetType, ?> runner,
         TaskToolbox toolbox,
-        boolean useTransaction
+        boolean useTransaction,
+        boolean skipSegmentPublish
     )
     {
       this.runner = runner;
       this.toolbox = toolbox;
       this.useTransaction = useTransaction;
+      this.skipSegmentPublish = skipSegmentPublish;
     }
 
     @Override
@@ -378,7 +383,7 @@ public class SequenceMetadata<PartitionIdType, SequenceOffsetType>
 
       final TaskAction<SegmentPublishResult> action;
 
-      if (segmentsToPush.isEmpty()) {
+      if (segmentsToPush.isEmpty() || skipSegmentPublish) {
         // If a task ingested no data but made progress reading through its assigned partitions,
         // we publish no segments but still need to update the supervisor with the current offsets
         SeekableStreamSequenceNumbers<PartitionIdType, SequenceOffsetType> startPartitions =

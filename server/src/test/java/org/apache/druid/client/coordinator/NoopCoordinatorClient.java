@@ -31,7 +31,9 @@ import java.util.List;
 public class NoopCoordinatorClient implements CoordinatorClient
 {
   @Override
-  public ListenableFuture<Boolean> isHandoffComplete(String dataSource, SegmentDescriptor descriptor)
+  public ListenableFuture<Boolean> isHandoffComplete(String dataSource, SegmentDescriptor descriptor,
+                                                     boolean allowNonReplicantTargetsForHandoff
+  )
   {
     throw new UnsupportedOperationException();
   }

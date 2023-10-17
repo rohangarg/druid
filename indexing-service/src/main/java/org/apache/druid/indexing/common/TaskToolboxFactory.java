@@ -62,6 +62,7 @@ import org.apache.druid.server.DruidNode;
 import org.apache.druid.server.coordination.DataSegmentAnnouncer;
 import org.apache.druid.server.coordination.DataSegmentServerAnnouncer;
 import org.apache.druid.server.security.AuthorizerMapper;
+import org.apache.druid.storage.StorageConnector;
 import org.apache.druid.tasklogs.TaskLogPusher;
 
 import java.io.File;
@@ -112,6 +113,7 @@ public class TaskToolboxFactory
   private final ShuffleClient shuffleClient;
   private final TaskLogPusher taskLogPusher;
   private final String attemptId;
+  private final StorageConnector storageConnector;
 
   @Inject
   public TaskToolboxFactory(
@@ -152,7 +154,8 @@ public class TaskToolboxFactory
       ParallelIndexSupervisorTaskClientProvider supervisorTaskClientProvider,
       ShuffleClient shuffleClient,
       TaskLogPusher taskLogPusher,
-      @AttemptId String attemptId
+      @AttemptId String attemptId,
+      StorageConnector storageConnector
   )
   {
     this.config = config;
@@ -193,6 +196,7 @@ public class TaskToolboxFactory
     this.shuffleClient = shuffleClient;
     this.taskLogPusher = taskLogPusher;
     this.attemptId = attemptId;
+    this.storageConnector = storageConnector;
   }
 
   public TaskToolbox build(Task task)
@@ -255,6 +259,7 @@ public class TaskToolboxFactory
         .shuffleClient(shuffleClient)
         .taskLogPusher(taskLogPusher)
         .attemptId(attemptId)
+        .storageConnector(storageConnector)
         .build();
   }
 }

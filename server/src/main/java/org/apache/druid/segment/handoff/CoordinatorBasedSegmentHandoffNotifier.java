@@ -44,16 +44,19 @@ public class CoordinatorBasedSegmentHandoffNotifier implements SegmentHandoffNot
   private volatile ScheduledExecutorService scheduledExecutor;
   private final Duration pollDuration;
   private final String dataSource;
+  private final boolean allowNonReplicantTargetsForHandoff;
 
   public CoordinatorBasedSegmentHandoffNotifier(
       String dataSource,
       CoordinatorClient coordinatorClient,
-      CoordinatorBasedSegmentHandoffNotifierConfig config
+      CoordinatorBasedSegmentHandoffNotifierConfig config,
+      boolean allowNonReplicantTargetsForHandoff
   )
   {
     this.dataSource = dataSource;
     this.coordinatorClient = coordinatorClient;
     this.pollDuration = config.getPollDuration();
+    this.allowNonReplicantTargetsForHandoff = allowNonReplicantTargetsForHandoff;
   }
 
   @Override
@@ -89,7 +92,11 @@ public class CoordinatorBasedSegmentHandoffNotifier implements SegmentHandoffNot
         SegmentDescriptor descriptor = entry.getKey();
         try {
           Boolean handOffComplete =
-              FutureUtils.getUnchecked(coordinatorClient.isHandoffComplete(dataSource, descriptor), true);
+              FutureUtils.getUnchecked(coordinatorClient.isHandoffComplete(
+                  dataSource,
+                  descriptor,
+                  allowNonReplicantTargetsForHandoff
+              ), true);
           if (Boolean.TRUE.equals(handOffComplete)) {
             log.debug("Segment handoff complete for dataSource[%s] segment[%s]", dataSource, descriptor);
             entry.getValue().lhs.execute(entry.getValue().rhs);

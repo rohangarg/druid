@@ -22,7 +22,13 @@ package org.apache.druid.storage.s3.output;
 import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.inject.Binder;
+import com.google.inject.Key;
+import com.google.inject.multibindings.MapBinder;
+import org.apache.druid.guice.JsonConfigProvider;
+import org.apache.druid.guice.PolyBind;
 import org.apache.druid.initialization.DruidModule;
+import org.apache.druid.storage.StorageConnector;
+import org.apache.druid.storage.s3.S3StorageDruidModule;
 
 import java.util.Collections;
 import java.util.List;
@@ -40,5 +46,13 @@ public class S3StorageConnectorModule implements DruidModule
   @Override
   public void configure(Binder binder)
   {
+    MapBinder<String, StorageConnector> mapBinder =
+        PolyBind.optionBinder(binder, Key.get(StorageConnector.class));
+    mapBinder.addBinding(S3StorageDruidModule.SCHEME).toProvider(S3StorageConnectorProvider.class);
+    JsonConfigProvider.bind(
+        binder,
+        "druid.storage",
+        S3StorageConnectorProvider.class
+    );
   }
 }

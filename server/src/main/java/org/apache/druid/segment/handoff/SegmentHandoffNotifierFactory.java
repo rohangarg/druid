@@ -23,4 +23,12 @@ package org.apache.druid.segment.handoff;
 public interface SegmentHandoffNotifierFactory
 {
   SegmentHandoffNotifier createSegmentHandoffNotifier(String dataSource);
+
+  default SegmentHandoffNotifier createSegmentHandoffNotifier(
+      String dataSource,
+      boolean allowNonReplicantTargetsForHandoff
+  )
+  {
+    return createSegmentHandoffNotifier(dataSource);
+  }
 }

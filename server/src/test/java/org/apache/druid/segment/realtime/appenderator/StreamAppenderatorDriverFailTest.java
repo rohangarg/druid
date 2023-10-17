@@ -135,7 +135,8 @@ public class StreamAppenderatorDriverFailTest extends EasyMockSupport
         new NoopUsedSegmentChecker(),
         dataSegmentKiller,
         OBJECT_MAPPER,
-        new FireDepartmentMetrics()
+        new FireDepartmentMetrics(),
+        false
     );
 
     driver.startJob(null);
@@ -173,7 +174,8 @@ public class StreamAppenderatorDriverFailTest extends EasyMockSupport
         new NoopUsedSegmentChecker(),
         dataSegmentKiller,
         OBJECT_MAPPER,
-        new FireDepartmentMetrics()
+        new FireDepartmentMetrics(),
+        false
     );
 
     driver.startJob(null);
@@ -211,7 +213,8 @@ public class StreamAppenderatorDriverFailTest extends EasyMockSupport
         new NoopUsedSegmentChecker(),
         dataSegmentKiller,
         OBJECT_MAPPER,
-        new FireDepartmentMetrics()
+        new FireDepartmentMetrics(),
+        false
     );
 
     driver.startJob(null);
@@ -264,7 +267,8 @@ public class StreamAppenderatorDriverFailTest extends EasyMockSupport
         new NoopUsedSegmentChecker(),
         dataSegmentKiller,
         OBJECT_MAPPER,
-        new FireDepartmentMetrics()
+        new FireDepartmentMetrics(),
+        false
     );
 
     driver.startJob(null);

@@ -24,6 +24,7 @@ import com.google.common.base.Preconditions;
 import org.apache.druid.client.cache.Cache;
 import org.apache.druid.client.cache.CacheConfig;
 import org.apache.druid.client.cache.CachePopulatorStats;
+import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.query.QueryProcessingPool;
 import org.apache.druid.query.QueryRunnerFactoryConglomerate;
@@ -36,12 +37,17 @@ import org.apache.druid.segment.join.JoinableFactory;
 import org.apache.druid.segment.join.JoinableFactoryWrapper;
 import org.apache.druid.segment.loading.DataSegmentPusher;
 import org.apache.druid.segment.realtime.FireDepartmentMetrics;
+import org.apache.druid.segment.realtime.appenderator.update.UpdatableStreamAppenderator;
+import org.apache.druid.segment.realtime.appenderator.update.UpdateSpec;
 import org.apache.druid.server.coordination.DataSegmentAnnouncer;
 import org.apache.druid.server.coordination.NoopDataSegmentAnnouncer;
+import org.apache.druid.storage.StorageConnector;
 import org.apache.druid.timeline.VersionedIntervalTimeline;
 
 public class Appenderators
 {
+  private static final Logger LOGGER = new Logger(Appenderators.class);
+
   public static Appenderator createRealtime(
       String id,
       DataSchema schema,
@@ -61,9 +67,25 @@ public class Appenderators
       CachePopulatorStats cachePopulatorStats,
       RowIngestionMeters rowIngestionMeters,
       ParseExceptionHandler parseExceptionHandler,
-      boolean useMaxMemoryEstimates
+      boolean useMaxMemoryEstimates,
+      StorageConnector storageConnector
   )
   {
+    if (config.getAppendableIndexSpec() instanceof UpdateSpec) {
+      LOGGER.info("Creating an updatable appenderator");
+      return new UpdatableStreamAppenderator(
+          id,
+          schema,
+          config,
+          storageConnector,
+          schema.getDataSource(),
+          segmentAnnouncer,
+          conglomerate,
+          queryProcessingPool,
+          emitter,
+          objectMapper
+      );
+    }
     return new StreamAppenderator(
         id,
         schema,
@@ -93,6 +115,7 @@ public class Appenderators
         parseExceptionHandler,
         useMaxMemoryEstimates
     );
+
   }
 
   public static Appenderator createOffline(
